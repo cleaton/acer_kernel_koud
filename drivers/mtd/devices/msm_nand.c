@@ -7259,7 +7259,8 @@ no_dual_nand_ctlr_support:
 	return 0;
 
 out_free_dma_buffer:
-	dma_free_coherent(/*dev*/ NULL, SZ_4K, info->msm_nand.dma_buffer,
+	dma_free_coherent(NULL, MSM_NAND_DMA_BUFFER_SIZE,
+			info->msm_nand.dma_buffer,
 			info->msm_nand.dma_addr);
 out_free_info:
 	kfree(info);
@@ -7282,7 +7283,7 @@ static int __devexit msm_nand_remove(struct platform_device *pdev)
 			del_mtd_device(&info->mtd);
 
 		msm_nand_release(&info->mtd);
-		dma_free_coherent(/*dev*/ NULL, SZ_4K,
+		dma_free_coherent(NULL, MSM_NAND_DMA_BUFFER_SIZE,
 				  info->msm_nand.dma_buffer,
 				  info->msm_nand.dma_addr);
 		kfree(info);
