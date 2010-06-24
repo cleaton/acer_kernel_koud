@@ -134,8 +134,17 @@ struct kgsl_device_getproperty {
 	unsigned int sizebytes;
 };
 
+struct kgsl_device_getproperty_pre {
+	unsigned int type;
+	void  *value;
+	unsigned int sizebytes;
+};
+
 #define IOCTL_KGSL_DEVICE_GETPROPERTY \
 	_IOWR(KGSL_IOC_TYPE, 0x2, struct kgsl_device_getproperty)
+
+#define IOCTL_KGSL_DEVICE_GETPROPERTY_PRE \
+	_IOWR(KGSL_IOC_TYPE, 0x2, struct kgsl_device_getproperty_pre)
 
 
 /* read a GPU register.
@@ -148,8 +157,17 @@ struct kgsl_device_regread {
 	unsigned int value; /* output param */
 };
 
+struct kgsl_device_regread_pre {
+	unsigned int offsetwords;
+	unsigned int value; /* output param */
+};
+
 #define IOCTL_KGSL_DEVICE_REGREAD \
 	_IOWR(KGSL_IOC_TYPE, 0x3, struct kgsl_device_regread)
+
+#define IOCTL_KGSL_DEVICE_REGREAD_PRE \
+	_IOWR(KGSL_IOC_TYPE, 0x3, struct kgsl_device_regread_pre)
+
 
 
 /* block until the GPU has executed past a given timestamp
@@ -161,8 +179,16 @@ struct kgsl_device_waittimestamp {
 	unsigned int timeout;
 };
 
+struct kgsl_device_waittimestamp_pre {
+	unsigned int timestamp;
+	unsigned int timeout;
+};
+
 #define IOCTL_KGSL_DEVICE_WAITTIMESTAMP \
 	_IOW(KGSL_IOC_TYPE, 0x6, struct kgsl_device_waittimestamp)
+
+#define IOCTL_KGSL_DEVICE_WAITTIMESTAMP_PRE \
+	_IOW(KGSL_IOC_TYPE, 0x6, struct kgsl_device_waittimestamp_pre)
 
 
 /* issue indirect commands to the GPU.
@@ -183,8 +209,19 @@ struct kgsl_ringbuffer_issueibcmds {
 	unsigned int flags;
 };
 
+struct kgsl_ringbuffer_issueibcmds_pre {
+	unsigned int drawctxt_id;
+	unsigned int ibaddr;
+	unsigned int sizedwords;
+	unsigned int timestamp; /*output param */
+	unsigned int flags;
+};
+
 #define IOCTL_KGSL_RINGBUFFER_ISSUEIBCMDS \
 	_IOWR(KGSL_IOC_TYPE, 0x10, struct kgsl_ringbuffer_issueibcmds)
+
+#define IOCTL_KGSL_RINGBUFFER_ISSUEIBCMDS_PRE \
+	_IOWR(KGSL_IOC_TYPE, 0x10, struct kgsl_ringbuffer_issueibcmds_pre)
 
 /* read the most recently executed timestamp value
  * type should be a value from enum kgsl_timestamp_type
@@ -195,8 +232,16 @@ struct kgsl_cmdstream_readtimestamp {
 	unsigned int timestamp; /*output param */
 };
 
+struct kgsl_cmdstream_readtimestamp_pre {
+	unsigned int type;
+	unsigned int timestamp; /*output param */
+};
+
 #define IOCTL_KGSL_CMDSTREAM_READTIMESTAMP \
 	_IOR(KGSL_IOC_TYPE, 0x11, struct kgsl_cmdstream_readtimestamp)
+
+#define IOCTL_KGSL_CMDSTREAM_READTIMESTAMP_PRE \
+	_IOR(KGSL_IOC_TYPE, 0x11, struct kgsl_cmdstream_readtimestamp_pre)
 
 /* free memory when the GPU reaches a given timestamp.
  * gpuaddr specify a memory region created by a
@@ -209,9 +254,17 @@ struct kgsl_cmdstream_freememontimestamp {
 	unsigned int type;
 	unsigned int timestamp;
 };
+struct kgsl_cmdstream_freememontimestamp_pre {
+	unsigned int gpuaddr;
+	unsigned int type;
+	unsigned int timestamp;
+};
 
 #define IOCTL_KGSL_CMDSTREAM_FREEMEMONTIMESTAMP \
 	_IOR(KGSL_IOC_TYPE, 0x12, struct kgsl_cmdstream_freememontimestamp)
+
+#define IOCTL_KGSL_CMDSTREAM_FREEMEMONTIMESTAMP_PRE \
+	_IOR(KGSL_IOC_TYPE, 0x12, struct kgsl_cmdstream_freememontimestamp_pre)
 
 /* create a draw context, which is used to preserve GPU state.
  * The flags field may contain a mask KGSL_CONTEXT_*  values
@@ -222,8 +275,16 @@ struct kgsl_drawctxt_create {
 	unsigned int drawctxt_id; /*output param */
 };
 
+struct kgsl_drawctxt_create_pre {
+	unsigned int flags;
+	unsigned int drawctxt_id; /*output param */
+};
+
 #define IOCTL_KGSL_DRAWCTXT_CREATE \
 	_IOWR(KGSL_IOC_TYPE, 0x13, struct kgsl_drawctxt_create)
+
+#define IOCTL_KGSL_DRAWCTXT_CREATE_PRE \
+	_IOWR(KGSL_IOC_TYPE, 0x13, struct kgsl_drawctxt_create_pre)
 
 /* destroy a draw context */
 struct kgsl_drawctxt_destroy {
@@ -231,8 +292,15 @@ struct kgsl_drawctxt_destroy {
 	unsigned int drawctxt_id;
 };
 
+struct kgsl_drawctxt_destroy_pre {
+	unsigned int drawctxt_id;
+};
+
 #define IOCTL_KGSL_DRAWCTXT_DESTROY \
 	_IOW(KGSL_IOC_TYPE, 0x14, struct kgsl_drawctxt_destroy)
+
+#define IOCTL_KGSL_DRAWCTXT_DESTROY_PRE \
+	_IOW(KGSL_IOC_TYPE, 0x14, struct kgsl_drawctxt_destroy_pre)
 
 /* add a block of pmem or fb into the GPU address space */
 struct kgsl_sharedmem_from_pmem {
@@ -304,8 +372,16 @@ struct kgsl_drawctxt_set_bin_base_offset {
 	unsigned int offset;
 };
 
+struct kgsl_drawctxt_set_bin_base_offset_pre {
+	unsigned int drawctxt_id;
+	unsigned int offset;
+};
+
 #define IOCTL_KGSL_DRAWCTXT_SET_BIN_BASE_OFFSET \
 	_IOW(KGSL_IOC_TYPE, 0x25, struct kgsl_drawctxt_set_bin_base_offset)
+
+#define IOCTL_KGSL_DRAWCTXT_SET_BIN_BASE_OFFSET_PRE \
+	_IOW(KGSL_IOC_TYPE, 0x25, struct kgsl_drawctxt_set_bin_base_offset_pre)
 
 enum kgsl_cmdwindow_type {
 	KGSL_CMDWINDOW_MIN     = 0x00000000,
@@ -324,7 +400,16 @@ struct kgsl_cmdwindow_write {
 	unsigned int data;
 };
 
+struct kgsl_cmdwindow_write_pre {
+	enum kgsl_cmdwindow_type target;
+	unsigned int addr;
+	unsigned int data;
+};
+
 #define IOCTL_KGSL_CMDWINDOW_WRITE \
 	_IOW(KGSL_IOC_TYPE, 0x2e, struct kgsl_cmdwindow_write)
+
+#define IOCTL_KGSL_CMDWINDOW_WRITE_PRE \
+	_IOW(KGSL_IOC_TYPE, 0x2e, struct kgsl_cmdwindow_write_pre)
 
 #endif /* _MSM_KGSL_H */

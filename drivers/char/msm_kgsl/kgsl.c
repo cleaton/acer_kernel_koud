@@ -730,6 +730,24 @@ done:
 	return result;
 }
 
+static long kgsl_ioctl_device_getproperty_pre(struct kgsl_file_private *private,
+					 void __user *arg)
+{
+	int result = 0;
+	struct kgsl_device_getproperty_pre param;
+
+	if (copy_from_user(&param, arg, sizeof(param))) {
+		result = -EFAULT;
+		goto done;
+	}
+	result = kgsl_yamato_getproperty(&kgsl_driver.yamato_device,
+				 param.type,
+				 param.value, param.sizebytes);
+
+done:
+	return result;
+}
+
 static long kgsl_ioctl_device_regread(struct kgsl_file_private *private,
 				     void __user *arg)
 {
@@ -764,6 +782,29 @@ done:
 	return result;
 }
 
+static long kgsl_ioctl_device_regread_pre(struct kgsl_file_private *private,
+				     void __user *arg)
+{
+	int result = 0;
+	struct kgsl_device_regread_pre param;
+
+	if (copy_from_user(&param, arg, sizeof(param))) {
+		result = -EFAULT;
+		goto done;
+	}
+	result = kgsl_yamato_regread(&kgsl_driver.yamato_device,
+			     param.offsetwords, &param.value);
+
+	if (result != 0)
+		goto done;
+
+	if (copy_to_user(arg, &param, sizeof(param))) {
+		result = -EFAULT;
+		goto done;
+	}
+done:
+	return result;
+}
 
 static long kgsl_ioctl_device_waittimestamp(struct kgsl_file_private *private,
 				     void __user *arg)
@@ -795,6 +836,29 @@ static long kgsl_ioctl_device_waittimestamp(struct kgsl_file_private *private,
 	} else {
 		result = -EINVAL;
 	}
+
+done:
+	return result;
+}
+
+static long kgsl_ioctl_device_waittimestamp_pre(struct kgsl_file_private *private,
+				     void __user *arg)
+{
+	int result = 0;
+	struct kgsl_device_waittimestamp_pre param;
+
+	if (copy_from_user(&param, arg, sizeof(param))) {
+		result = -EFAULT;
+		goto done;
+	}
+
+	mutex_unlock(&kgsl_driver.mutex);
+	result = kgsl_yamato_waittimestamp(&kgsl_driver.yamato_device,
+			     param.timestamp,
+			     param.timeout);
+	mutex_lock(&kgsl_driver.mutex);
+
+	kgsl_runpending(&kgsl_driver.yamato_device);
 
 done:
 	return result;
@@ -879,6 +943,53 @@ done:
 	return result;
 }
 
+static long kgsl_ioctl_rb_issueibcmds_pre(struct kgsl_file_private *private,
+				     void __user *arg)
+{
+	int result = 0;
+	struct kgsl_ringbuffer_issueibcmds_pre param;
+
+	if (copy_from_user(&param, arg, sizeof(param))) {
+		result = -EFAULT;
+		goto done;
+	}
+
+	if (param.drawctxt_id >= KGSL_CONTEXT_MAX ||
+		(private->yamato_ctxt_id_mask & 1 <<
+		param.drawctxt_id) == 0) {
+		result = -EINVAL;
+		KGSL_DRV_ERR("invalid drawctxt drawctxt_id %d\n",
+			      param.drawctxt_id);
+		result = -EINVAL;
+		goto done;
+	}
+
+	if (kgsl_sharedmem_find_region(private, param.ibaddr,
+			param.sizedwords*sizeof(uint32_t)) == NULL) {
+		KGSL_DRV_ERR("invalid cmd buffer ibaddr %08x " \
+				"sizedwords %d\n",
+				param.ibaddr, param.sizedwords);
+		result = -EINVAL;
+		goto done;
+	}
+
+	result = kgsl_ringbuffer_issueibcmds(&kgsl_driver.yamato_device,
+				     param.drawctxt_id,
+				     param.ibaddr,
+				     param.sizedwords,
+				     &param.timestamp,
+				     param.flags);
+	if (result != 0)
+		goto done;
+
+	if (copy_to_user(arg, &param, sizeof(param))) {
+		result = -EFAULT;
+		goto done;
+	}
+done:
+	return result;
+}
+
 static long kgsl_ioctl_cmdstream_readtimestamp(struct kgsl_file_private
 						*private, void __user *arg)
 {
@@ -904,6 +1015,33 @@ static long kgsl_ioctl_cmdstream_readtimestamp(struct kgsl_file_private
 	} else {
 		result = -EINVAL;
 	}
+
+	if (result != 0)
+		goto done;
+
+	if (copy_to_user(arg, &param, sizeof(param))) {
+		result = -EFAULT;
+		goto done;
+	}
+done:
+	return result;
+}
+
+static long kgsl_ioctl_cmdstream_readtimestamp_pre(struct kgsl_file_private
+						*private, void __user *arg)
+{
+	int result = 0;
+	struct kgsl_cmdstream_readtimestamp_pre param;
+
+	if (copy_from_user(&param, arg, sizeof(param))) {
+		result = -EFAULT;
+		goto done;
+	}
+
+	param.timestamp =
+		kgsl_cmdstream_readtimestamp(
+					&kgsl_driver.yamato_device,
+						param.type);
 
 	if (result != 0)
 		goto done;
@@ -962,6 +1100,39 @@ done:
 	return result;
 }
 
+static long kgsl_ioctl_cmdstream_freememontimestamp_pre(struct kgsl_file_private
+						*private, void __user *arg)
+{
+	int result = 0;
+	struct kgsl_cmdstream_freememontimestamp_pre param;
+	struct kgsl_mem_entry *entry = NULL;
+
+	if (copy_from_user(&param, arg, sizeof(param))) {
+		result = -EFAULT;
+		goto done;
+	}
+
+	entry = kgsl_sharedmem_find(private, param.gpuaddr);
+	if (entry == NULL) {
+		KGSL_DRV_ERR("invalid gpuaddr %08x\n", param.gpuaddr);
+		result = -EINVAL;
+		goto done;
+	}
+#ifdef CONFIG_MSM_KGSL_MMU
+	if (entry->memdesc.priv & KGSL_MEMFLAGS_VMALLOC_MEM)
+		entry->memdesc.priv &= ~KGSL_MEMFLAGS_MEM_REQUIRES_FLUSH;
+#endif
+	result = kgsl_cmdstream_freememontimestamp(
+					&kgsl_driver.yamato_device,
+						entry,
+						param.timestamp,
+						param.type);
+
+	kgsl_runpending(&kgsl_driver.yamato_device);
+done:
+	return result;
+}
+
 static long kgsl_ioctl_drawctxt_create(struct kgsl_file_private *private,
 				      void __user *arg)
 {
@@ -1012,6 +1183,35 @@ done:
 	return result;
 }
 
+static long kgsl_ioctl_drawctxt_create_pre(struct kgsl_file_private *private,
+				      void __user *arg)
+{
+	int result = 0;
+	struct kgsl_drawctxt_create_pre param;
+
+	if (copy_from_user(&param, arg, sizeof(param))) {
+		result = -EFAULT;
+		goto done;
+	}
+
+	result = kgsl_drawctxt_create(&kgsl_driver.yamato_device,
+				private->pagetable,
+				param.flags,
+				&param.drawctxt_id);
+	if (result != 0)
+		goto done;
+
+	if (copy_to_user(arg, &param, sizeof(param))) {
+		result = -EFAULT;
+		goto done;
+	}
+
+	private->yamato_ctxt_id_mask |= 1 << param.drawctxt_id;
+
+done:
+	return result;
+}
+
 static long kgsl_ioctl_drawctxt_destroy(struct kgsl_file_private *private,
 				       void __user *arg)
 {
@@ -1054,6 +1254,33 @@ static long kgsl_ioctl_drawctxt_destroy(struct kgsl_file_private *private,
 	} else {
 		result = -EINVAL;
 	}
+done:
+	return result;
+}
+
+static long kgsl_ioctl_drawctxt_destroy_pre(struct kgsl_file_private *private,
+				       void __user *arg)
+{
+	int result = 0;
+	struct kgsl_drawctxt_destroy param;
+
+	if (copy_from_user(&param, arg, sizeof(param))) {
+		result = -EFAULT;
+		goto done;
+	}
+
+	if (param.drawctxt_id >= KGSL_CONTEXT_MAX ||
+			(private->yamato_ctxt_id_mask & 1 <<
+			param.drawctxt_id) == 0) {
+		result = -EINVAL;
+		goto done;
+	}
+
+	result = kgsl_drawctxt_destroy(&kgsl_driver.yamato_device,
+				param.drawctxt_id);
+	if (result == 0)
+		private->yamato_ctxt_id_mask &=
+				~(1 << param.drawctxt_id);
 done:
 	return result;
 }
@@ -1420,6 +1647,7 @@ static long kgsl_ioctl(struct file *filep, unsigned int cmd, unsigned long arg)
 	int result = 0;
 	struct kgsl_file_private *private = filep->private_data;
 	struct kgsl_drawctxt_set_bin_base_offset binbase;
+	struct kgsl_drawctxt_set_bin_base_offset_pre binbase_pre;
 
 	BUG_ON(private == NULL);
 
@@ -1432,12 +1660,27 @@ static long kgsl_ioctl(struct file *filep, unsigned int cmd, unsigned long arg)
 		    kgsl_ioctl_device_getproperty(private, (void __user *)arg);
 		break;
 
+	case IOCTL_KGSL_DEVICE_GETPROPERTY_PRE:
+		result =
+		    kgsl_ioctl_device_getproperty_pre(private, (void __user *)arg);
+		break;
+
 	case IOCTL_KGSL_DEVICE_REGREAD:
 		result = kgsl_ioctl_device_regread(private, (void __user *)arg);
 		break;
 
+	case IOCTL_KGSL_DEVICE_REGREAD_PRE:
+		result = kgsl_ioctl_device_regread_pre(private, (void __user *)arg);
+		break;
+
 	case IOCTL_KGSL_DEVICE_WAITTIMESTAMP:
 		result = kgsl_ioctl_device_waittimestamp(private,
+							(void __user *)arg);
+		/* order reads to the buffer written to by the GPU */
+		rmb();
+		break;
+	case IOCTL_KGSL_DEVICE_WAITTIMESTAMP_PRE:
+		result = kgsl_ioctl_device_waittimestamp_pre(private,
 							(void __user *)arg);
 		/* order reads to the buffer written to by the GPU */
 		rmb();
@@ -1454,9 +1697,25 @@ static long kgsl_ioctl(struct file *filep, unsigned int cmd, unsigned long arg)
 		result = kgsl_ioctl_rb_issueibcmds(private, (void __user *)arg);
 		break;
 
+	case IOCTL_KGSL_RINGBUFFER_ISSUEIBCMDS_PRE:
+#ifdef CONFIG_MSM_KGSL_MMU
+		if (kgsl_cache_enable)
+			kgsl_clean_cache_all(private);
+#endif
+#ifdef CONFIG_MSM_KGSL_DRM
+		kgsl_gpu_mem_flush();
+#endif
+		result = kgsl_ioctl_rb_issueibcmds_pre(private, (void __user *)arg);
+		break;
+
 	case IOCTL_KGSL_CMDSTREAM_READTIMESTAMP:
 		result =
 		    kgsl_ioctl_cmdstream_readtimestamp(private,
+							(void __user *)arg);
+		break;
+	case IOCTL_KGSL_CMDSTREAM_READTIMESTAMP_PRE:
+		result =
+		    kgsl_ioctl_cmdstream_readtimestamp_pre(private,
 							(void __user *)arg);
 		break;
 
@@ -1465,15 +1724,28 @@ static long kgsl_ioctl(struct file *filep, unsigned int cmd, unsigned long arg)
 		    kgsl_ioctl_cmdstream_freememontimestamp(private,
 						    (void __user *)arg);
 		break;
+	case IOCTL_KGSL_CMDSTREAM_FREEMEMONTIMESTAMP_PRE:
+		result =
+		    kgsl_ioctl_cmdstream_freememontimestamp_pre(private,
+						    (void __user *)arg);
+		break;
 
 	case IOCTL_KGSL_DRAWCTXT_CREATE:
 		result = kgsl_ioctl_drawctxt_create(private,
+							(void __user *)arg);
+		break;
+	case IOCTL_KGSL_DRAWCTXT_CREATE_PRE:
+		result = kgsl_ioctl_drawctxt_create_pre(private,
 							(void __user *)arg);
 		break;
 
 	case IOCTL_KGSL_DRAWCTXT_DESTROY:
 		result =
 		    kgsl_ioctl_drawctxt_destroy(private, (void __user *)arg);
+		break;
+	case IOCTL_KGSL_DRAWCTXT_DESTROY_PRE:
+		result =
+		    kgsl_ioctl_drawctxt_destroy_pre(private, (void __user *)arg);
 		break;
 
 	case IOCTL_KGSL_SHAREDMEM_FREE:
@@ -1522,10 +1794,32 @@ static long kgsl_ioctl(struct file *filep, unsigned int cmd, unsigned long arg)
 				     binbase.drawctxt_id);
 		}
 		break;
+	case IOCTL_KGSL_DRAWCTXT_SET_BIN_BASE_OFFSET_PRE:
+		if (copy_from_user(&binbase_pre, (void __user *)arg,
+				   sizeof(binbase_pre))) {
+			result = -EFAULT;
+			break;
+		}
+
+		if ((private->yamato_ctxt_id_mask &
+					(1 << binbase_pre.drawctxt_id))) {
+			result = kgsl_drawctxt_set_bin_base_offset(
+					&kgsl_driver.yamato_device,
+					binbase_pre.drawctxt_id,
+					binbase_pre.offset);
+		} else {
+			result = -EINVAL;
+			KGSL_DRV_ERR("invalid drawctxt drawctxt_id %d\n",
+				     binbase_pre.drawctxt_id);
+		}
+		break;
 
 	case IOCTL_KGSL_CMDWINDOW_WRITE:
 		result = kgsl_ioctl_cmdwindow_write(private,
 							(void __user *)arg);
+		break;
+	case IOCTL_KGSL_CMDWINDOW_WRITE_PRE:
+		return -EINVAL; //Exist only for G12
 		break;
 	default:
 		KGSL_DRV_ERR("invalid ioctl code %08x\n", cmd);
