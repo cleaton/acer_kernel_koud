@@ -9,7 +9,9 @@
 #
 # Normal rules
 #
-.*
+.version
+.tmp*
+.*.cmd
 *.o
 *.o.*
 *.a
