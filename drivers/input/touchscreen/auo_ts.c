@@ -336,11 +336,25 @@ static int __init h353vl01_register_input(struct input_dev *input)
 	input->id.bustype = BUS_I2C;
 	input->evbit[0] =
 		BIT_MASK(EV_SYN) | BIT_MASK(EV_KEY) | BIT_MASK(EV_ABS);
+	input->keybit[BIT_WORD(BTN_TOUCH)] = BIT_MASK(BTN_TOUCH);
+	input->keybit[BIT_WORD(BTN_2)]     = BIT_MASK(BTN_2);
 
-	input_set_abs_params(input, ABS_MT_TOUCH_MAJOR, 0, 1, 0, 0);
-	input_set_abs_params(input, ABS_MT_WIDTH_MAJOR, 0, AUO_TS_X_MAX, 0, 0);
+	input_set_abs_params(input, ABS_X, AUO_TS_X_MIN, AUO_TS_X_MAX, 0, 0);
+	input_set_abs_params(input, ABS_Y, AUO_TS_Y_MIN, AUO_TS_Y_MAX, 0, 0);
+
+	/* Report event size by abs distance of x-axis */
+	//input_set_abs_params(input, ABS_TOOL_WIDTH, 0, AUO_TS_X_MAX, 0, 0);
+	input_set_abs_params(input, ABS_PRESSURE, 0, 255, 0, 0); 
+	input_set_abs_params(input, ABS_TOOL_WIDTH, 0, 1, 0, 0);
+
 	input_set_abs_params(input, ABS_MT_POSITION_X, AUO_TS_X_MIN, AUO_TS_X_MAX, 0, 0);
-	input_set_abs_params(input, ABS_MT_POSITION_Y, AUO_TS_Y_MIN, AUO_TS_Y_MAX, 0, 0);
+	input_set_abs_params(input, ABS_MT_POSITION_X, AUO_TS_Y_MIN, AUO_TS_Y_MAX, 0, 0);
+	input_set_abs_params(input, ABS_MT_TOUCH_MAJOR, 0, 255, 0, 0);
+	input_set_abs_params(input, ABS_MT_WIDTH_MAJOR, 0, 1, 0, 0);
+	//Android's stupid?
+	input->absbit[0]=0xffffff;
+	input->absbit[1]=0xffffff;
+
 	return input_register_device(input);
 }
 
