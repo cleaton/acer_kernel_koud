@@ -11,7 +11,7 @@
 #include <linux/interrupt.h>
 #include <asm/io.h>
 #include <linux/i2c.h>
-#include <../../arch/arm/mach-msm/smd_private.h>
+#include <mach/smd_private.h>
 #include <mach/msm_rpcrouter.h>
 #include <linux/delay.h>
 #include <mach/board.h>
