@@ -28,10 +28,10 @@
 #define COORDINATE_COMPARE_MODE  0x0d
 
 #define SENSITIVITY_REG          0x67
-#define SENSITIVITY              75
+#define SENSITIVITY              30
 
 #define NOISE_REG                0x37
-#define NOISE                    75
+#define NOISE                    30
 
 #define VERSION_REG              0x7c
 #define SUB_VERSION_REG          0x78
@@ -218,12 +218,15 @@ i2c_err:
 
 static void h353vl01_work_func(struct work_struct *work)
 {
-	unsigned int coord[2][2]= {{0}};
+	static int finger2_was_pressed=0,was_pressed;
+	static int oldcoord[2][2]={{0,0},{0,0}};
+
+	unsigned int coord[2][2];
+	unsigned int rawcoord[2][2];
 	uint8_t data_addr = 0x40;
 	uint8_t buf[8] = { 0 };
 	int pressed = 0;
 	int finger2_pressed = 0;
-	int width = 0;
 
 	if (h353_data->status != ACTIVE) {
 		set_mode(h353_data->status);
@@ -235,40 +238,80 @@ static void h353vl01_work_func(struct work_struct *work)
 	if (8 !=i2c_master_recv(h353_data->client, buf, 8))
 		goto i2c_err;
 
-	/* coord[0]: finger1, coord[1]: finger2 */
-	coord[0][0] = buf[0] + (buf[4]*256);
-	coord[0][1] = buf[1] + (buf[5]*256);
-	coord[1][0] = buf[2] + (buf[6]*256);
-	coord[1][1] = buf[3] + (buf[7]*256);
+	// coord[0]: finger1, coord[1]: finger2
+	rawcoord[0][0] = buf[0] + (buf[4]*256);
+	rawcoord[0][1] = buf[1] + (buf[5]*256);
+	rawcoord[1][0] = buf[2] + (buf[6]*256);
+	rawcoord[1][1] = buf[3] + (buf[7]*256);
 
-	pressed = (coord[0][0]||coord[0][1]) ? 1 : 0;
-	finger2_pressed = (coord[1][0]||coord[1][1]) ? 1: 0;
 
-	// New MT framework
-	if (pressed) {
-		input_report_abs(h353_data->input, ABS_MT_POSITION_X, coord[0][0]);
-		input_report_abs(h353_data->input, ABS_MT_POSITION_Y, coord[0][1]);
+	pressed 	= (rawcoord[0][0]||rawcoord[0][1]) ? 1 : 0;
+	finger2_pressed = (rawcoord[1][0]||rawcoord[1][1]) ? 1 : 0;
 
-		/* Calculate event width */
-		if (finger2_pressed) {
-			/* Report the width according to the abs distance of x-axis */
-			width = abs((coord[0][0] - coord[1][0]));
+	if(!finger2_pressed) {
+		//Monotouch, nothing to do
+		coord[0][0]=rawcoord[0][0];
+		coord[0][1]=rawcoord[0][1];
+		coord[1][0]=rawcoord[1][0];
+		coord[1][1]=rawcoord[1][1];
+	} else {
+		if(!was_pressed) {
+			//Ouch, two fingers appear at the same time
+			//Sorry I can't do that :(
+			coord[0][0]=rawcoord[0][0];
+			coord[0][1]=rawcoord[0][1];
+			coord[1][0]=rawcoord[1][0];
+			coord[1][1]=rawcoord[1][1];
+		} else {
+#define sq(z) (z)*(z)
+#define dst(x1,y1,x2,y2) (sq(rawcoord[x1][0]-oldcoord[x2][0])+sq(rawcoord[y1][1]-oldcoord[y2][1]))
+			int i,k=0;
+			//Do the nearest math only on the first point, the second one can appear anywhere.
+			for(i=1;i<4;++i) {
+				if(dst(i%2, i/2, 0, 0)<dst(k%2, k/2, 0, 0))
+					k=i;
+			}
+			coord[0][0]=rawcoord[k%2][0];
+			coord[0][1]=rawcoord[k/2][1];
+			coord[1][0]=rawcoord[!(k%2)][0];
+			coord[1][1]=rawcoord[!(k/2)][1];
 		}
 	}
-	input_report_abs(h353_data->input, ABS_MT_WIDTH_MAJOR, width);
-	input_report_abs(h353_data->input, ABS_MT_TOUCH_MAJOR, pressed);
-	input_mt_sync(h353_data->input);
 
-	// Report second pointer
-	if (finger2_pressed) {
-		input_report_abs(h353_data->input, ABS_MT_POSITION_X, coord[1][0]);
-		input_report_abs(h353_data->input, ABS_MT_POSITION_Y, coord[1][1]);
+	if ( pressed ) {
+		input_report_abs(h353_data->input, ABS_X, coord[0][0] );
+		input_report_abs(h353_data->input, ABS_Y, coord[0][1] );
 	}
-	input_report_abs(h353_data->input, ABS_MT_WIDTH_MAJOR, width);
-	input_report_abs(h353_data->input, ABS_MT_TOUCH_MAJOR, finger2_pressed);
-	input_mt_sync(h353_data->input);
+	input_report_abs(h353_data->input, ABS_PRESSURE, pressed ? 128 : 0); 
+	input_report_abs(h353_data->input, ABS_TOOL_WIDTH, 0);
+	input_report_key(h353_data->input, BTN_TOUCH, pressed );
 
+
+	input_report_abs(h353_data->input, ABS_MT_TOUCH_MAJOR, pressed ? 128 : 0);
+	input_report_abs(h353_data->input, ABS_MT_WIDTH_MAJOR, 0);
+	input_report_abs(h353_data->input, ABS_MT_POSITION_X, (coord[0][0]*5)/3);
+	input_report_abs(h353_data->input, ABS_MT_POSITION_Y, coord[0][1]);
+	input_mt_sync(h353_data->input);
+	if (finger2_pressed) {
+		input_report_abs(h353_data->input, ABS_MT_TOUCH_MAJOR, 128);
+		input_report_abs(h353_data->input, ABS_MT_WIDTH_MAJOR, 0);
+		input_report_abs(h353_data->input, ABS_MT_POSITION_X, (coord[1][0]*5)/3);
+		input_report_abs(h353_data->input, ABS_MT_POSITION_Y, coord[1][1]);
+		input_mt_sync(h353_data->input);
+	} else if (finger2_was_pressed) {
+		input_report_abs(h353_data->input, ABS_MT_TOUCH_MAJOR, 0);
+		input_report_abs(h353_data->input, ABS_MT_WIDTH_MAJOR, 0);
+		input_mt_sync(h353_data->input);
+	}
 	input_sync(h353_data->input);
+	oldcoord[0][0]=coord[0][0];
+	oldcoord[0][1]=coord[0][1];
+	oldcoord[1][0]=coord[1][0];
+	oldcoord[1][1]=coord[1][1];
+
+	finger2_was_pressed=finger2_pressed;
+	was_pressed=pressed;
+
 
 	return;
 i2c_err:
