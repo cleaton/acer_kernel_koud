@@ -76,11 +76,7 @@
 #endif
 
 #define MSM_USB_BASE	(dev->regs)
-#if defined(CONFIG_MACH_ACER_A1)
-#define is_host()	0 /* A1 do not support HOST mode */
-#else
 #define is_host()	((OTGSC_ID & readl(USB_OTGSC)) ? 0 : 1)
-#endif
 #define is_b_sess_vld()	((OTGSC_BSV & readl(USB_OTGSC)) ? 1 : 0)
 #define DRIVER_NAME	"msm_otg"
 
