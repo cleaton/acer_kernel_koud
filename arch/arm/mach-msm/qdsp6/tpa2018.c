@@ -13,7 +13,8 @@
 #include <linux/earlysuspend.h>
 #include <asm/uaccess.h>
 #include <mach/gpio.h>
-#include <mach/tpa2018.h>
+#include <mach/qdsp6/msm8k_ardi.h>
+#include <mach/qdsp6/tpa2018.h>
 #include <mach/board.h>
 
 #if 0
@@ -116,8 +117,8 @@ static int i2c_write(struct i2c_client *client, char *buf, int count){
 static void tpa2018_arg_init(void)
 {
 	int count;
-	uint8_t tpa_wBuf_v3[8]={1,195,1,1,0,24,24,80}; /* 195,1,1,0,26, limit = 4.5, max = 23 ratio = 1:1 */
-	uint8_t tpa_wBuf[8]={1,195,1,1,0,26,24,80}; /* 195,1,1,0,30, limit = 4.5, max = 23 ratio = 1:1 */
+	uint8_t tpa_wBuf_v3[8]={1,195,1,1,0,24,26,129}; /* 195,1,1,0,30,26,192 */
+	uint8_t tpa_wBuf[8]={1,195,1,1,0,26,28,129}; /* 195,1,1,0,30,28,192 */
 	uint8_t tpa_rBuf[7]={0};
 	struct i2c_client *client = tpa2018_data.client;
 
@@ -230,11 +231,9 @@ static void tpa2018_early_resume(struct early_suspend *h)
 {
 	pr_debug("[TPA2018] %s ++ entering\n", __FUNCTION__);
 	if (adie_act_flag == 0) {
-		if (!gpio_get_value(SPK_AMP_EN)) {
-			gpio_set_value(SPK_AMP_EN, 1);
-			ACER_DBG("SPK_AMP_EN pull high!!\n");
-			tpa2018_arg_init();
-		}
+		gpio_set_value(SPK_AMP_EN, 1);
+		ACER_DBG("SPK_AMP_EN pull high!!\n");
+		tpa2018_arg_init();
 		tpa2018_software_shutdown(1);
 	}
 	pr_debug("[TPA2018] %s -- leaving\n", __FUNCTION__);
@@ -279,7 +278,7 @@ static int tpa2018_set_limitor(int type)
 {
 	switch(type) {
 		case STREAM_VOICE_CALL:
-			tpa2018_set_control(1, 7, 128);
+			tpa2018_set_control(1, 7, 129);
 			if (hw_version <= 3) {
 				tpa2018_set_control(1, 6, 22);
 				ACER_DBG(" Set TPA2018 limiter which is 4.5dBv!! \n");
@@ -290,7 +289,7 @@ static int tpa2018_set_limitor(int type)
 			return 0;
 
 		case STREAM_SYSTEM:
-			tpa2018_set_control(1, 7, 128);
+			tpa2018_set_control(1, 7, 129);
 			if (hw_version <= 3) {
 				tpa2018_set_control(1, 6, 22);
 				ACER_DBG(" Set TPA2018 limiter which is 4.5dBv!! \n");
@@ -301,7 +300,7 @@ static int tpa2018_set_limitor(int type)
 			return 0;
 
 		case STREAM_RING:
-			tpa2018_set_control(1, 7, 128);
+			tpa2018_set_control(1, 7, 129);
 
 			if (hw_version <= 3) {
 				tpa2018_set_control(1, 6, 22);
@@ -313,7 +312,7 @@ static int tpa2018_set_limitor(int type)
 			return 0;
 
 		case STREAM_MUSIC:
-			tpa2018_set_control(1, 7, 80);
+			tpa2018_set_control(1, 7, 49);
 			if (hw_version <= 3) {
 				tpa2018_set_control(1, 6, 18);
 				ACER_DBG(" Set TPA2018 limiter which is 4.0dBv!! \n");
@@ -324,7 +323,7 @@ static int tpa2018_set_limitor(int type)
 			return 0;
 
 		case STREAM_ALARM:
-			tpa2018_set_control(1, 7, 128);
+			tpa2018_set_control(1, 7, 129);
 			if (hw_version <= 3) {
 				tpa2018_set_control(1, 6, 24);
 				ACER_DBG(" Set TPA2018 limiter which is 6.0dBv!! \n");
@@ -335,7 +334,7 @@ static int tpa2018_set_limitor(int type)
 			return 0;
 
 		case STREAM_NOTIFICATION:
-			tpa2018_set_control(1, 7, 128);
+			tpa2018_set_control(1, 7, 129);
 			if (hw_version <= 3) {
 				tpa2018_set_control(1, 6, 22);
 				ACER_DBG(" Set TPA2018 limiter which is 4.5dBv!! \n");
@@ -346,7 +345,7 @@ static int tpa2018_set_limitor(int type)
 			return 0;
 
 		default:
-			tpa2018_set_control(1, 7, 128);
+			tpa2018_set_control(1, 7, 129);
 			if (hw_version <= 3) {
 				tpa2018_set_control(1, 6, 24);
 				ACER_DBG(" Set TPA2018 limiter which is 6.0dBv!! \n");
@@ -367,8 +366,8 @@ void set_adie_flag(int flag)
 int get_adie_flag(void)
 {
 	int flag;
+        ACER_DBG("adie flag = %d \n", flag);
 	flag = adie_act_flag;
-	ACER_DBG("adie flag = %d \n", flag);
 	return flag;
 }
 
@@ -465,6 +464,10 @@ static int tpa2018_ioctl(struct inode *inode, struct file *file, unsigned int cm
 			uparam/=100;
 			ACER_DBG(" uparam/=100 = %d.\n", uparam);
 			tpa2018_set_control(1, 5, uparam);
+			if (uparam == 0)
+				tpa2018_set_control(1, 1, 227);
+			else
+				tpa2018_set_control(1, 1, 195);
 			return 0;
 
 		case TPA2018_SET_STREAM_TYPE:
@@ -481,7 +484,7 @@ static int tpa2018_ioctl(struct inode *inode, struct file *file, unsigned int cm
 			return 0;
 
 		case TPA2018_CLOSE:
-			if (tpa_act_flag)
+			if (adie_act_flag != 1)
 				tpa2018_software_shutdown(1);
 			tpa_act_flag = false;
 			return 0;

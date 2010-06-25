@@ -10,7 +10,7 @@
 #include <linux/interrupt.h>
 #include <linux/miscdevice.h>
 #include <asm/uaccess.h>
-#include <mach/fm2018.h>
+#include <mach/qdsp6/fm2018.h>
 
 #define FM2018_DEV_IOCTLID	0x15
 #define IOC_MAXNR	2
@@ -33,8 +33,6 @@ static int fm2018_read(int regH, int regL);
 static void fm2018_power_seq(void);
 static s32 fm2018_get_dm_gpios(void);
 static void show_dn_gpio(void);
-
-struct ard_denoise_mic_gpios dm_gpios;
 
 static const struct i2c_device_id fm2018_id[] = {
 	{ FM2018_DRIVER_NAME, 0 },
