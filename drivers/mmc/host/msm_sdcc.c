@@ -1768,8 +1768,9 @@ static int msmsdcc_auto_suspend(struct mmc_host *host, int suspend)
 static struct platform_driver msmsdcc_driver = {
 	.probe		= msmsdcc_probe,
 	.remove		= msmsdcc_remove,
+	/*
 	.suspend	= msmsdcc_suspend,
-	.resume		= msmsdcc_resume,
+	.resume		= msmsdcc_resume,*/
 	.driver		= {
 		.name	= "msm_sdcc",
 	},
