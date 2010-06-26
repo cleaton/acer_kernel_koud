@@ -196,9 +196,16 @@ static struct usb_composition usb_func_composition[] = {
 	{
 		.product_id         = 0x3203,
 		/* DIAG + ADB + GENERIC MODEM + GENERIC NMEA + MSC*/
-		.functions          = 0x82764,
+		.functions          = 0x2764,
 		.adb_product_id     = 0x3202,
-		.adb_functions      = 0x827614,
+		.adb_functions      = 0x27614,
+	},
+	{
+		.product_id         = 0x3205,
+		/* DIAG + ADB + GENERIC MODEM + GENERIC NMEA + MSC*/
+		.functions          = 0x92764,
+		.adb_product_id     = 0x3204,
+		.adb_functions      = 0x927614,
 	},
 };
 #else
@@ -268,6 +275,15 @@ static struct usb_composition usb_func_composition[] = {
 		.functions	    = 0x94,
 		.adb_product_id     = 0x9022,
 		.adb_functions	    = 0x914,
+	},
+#endif
+#ifdef CONFIG_USB_ANDROID_RNDIS
+	{
+		/* RNDIS */
+		.product_id         = 0xF00E,
+		.functions	    = 0xA,
+		.adb_product_id     = 0x9024,
+		.adb_functions	    = 0x1A,
 	},
 #endif
 };
