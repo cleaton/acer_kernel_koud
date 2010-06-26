@@ -195,16 +195,9 @@ static struct platform_device mass_storage_device = {
 static struct usb_composition usb_func_composition[] = {
 	{
 		.product_id         = 0x3203,
-		/* DIAG + ADB + GENERIC MODEM + GENERIC NMEA + MSC*/
-		.functions          = 0x2764,
-		.adb_product_id     = 0x3202,
-		.adb_functions      = 0x27614,
-	},
-	{
-		.product_id         = 0x3205,
-		/* DIAG + ADB + GENERIC MODEM + GENERIC NMEA + MSC*/
+		/* DIAG + ADB + GENERIC MODEM + GENERIC NMEA + MSC+ RNDIS*/
 		.functions          = 0x92764,
-		.adb_product_id     = 0x3204,
+		.adb_product_id     = 0x3202,
 		.adb_functions      = 0x927614,
 	},
 };
