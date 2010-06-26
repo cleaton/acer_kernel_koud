@@ -196,9 +196,9 @@ static struct usb_composition usb_func_composition[] = {
 	{
 		.product_id         = 0x3203,
 		/* DIAG + ADB + GENERIC MODEM + GENERIC NMEA + MSC+ RNDIS*/
-		.functions          = 0x92764,
+		.functions          = 0x2764,
 		.adb_product_id     = 0x3202,
-		.adb_functions      = 0x927614,
+		.adb_functions      = 0x27614,
 	},
 };
 #else
@@ -1773,12 +1773,17 @@ static struct platform_device msm_wifi_power_device = {
 };
 
 static struct embedded_sdio_data bcm_wifi_emb_data = {
-    .cis = {
-        .max_dtr = 25000000,
-    },
-    .cccr = {
-        .multi_block = 1,
-    },
+	.cis = {
+		.max_dtr = 25000000,
+	},
+	.cccr   = {
+		.sdio_vsn       = 2,
+		.multi_block    = 1,
+		.low_speed      = 0,
+		.wide_bus       = 0,
+		.high_power     = 1,
+		.high_speed     = 1,
+	},
 };
 
 //When sue Android UI to Open Wifi and open Wifi Power
