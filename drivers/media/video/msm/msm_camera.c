@@ -41,6 +41,7 @@ DEFINE_MUTEX(pp_prev_lock);
 DEFINE_MUTEX(pp_snap_lock);
 
 #define MSM_MAX_CAMERA_SENSORS 5
+#define CAMERA_STOP_SNAPSHOT 42
 
 #define ERR_USER_COPY(to) pr_err("%s(%d): copy %s user\n", \
 				__func__, __LINE__, ((to) ? "to" : "from"))
@@ -52,9 +53,6 @@ static dev_t msm_devno;
 static LIST_HEAD(msm_sensors);
 struct  msm_control_device *g_v4l2_control_device;
 int g_v4l2_opencnt;
-#if defined(CONFIG_MACH_ACER_A1)
-static int get_pict_abort;
-#endif
 
 #define __CONTAINS(r, v, l, field) ({				\
 	typeof(r) __r = r;					\
@@ -645,18 +643,13 @@ static int msm_control(struct msm_control_device *ctrl_pmsm,
 
 	uptr = udata.value;
 	udata.value = data;
+	if (udata.type == CAMERA_STOP_SNAPSHOT)
+		sync->get_pic_abort = 1;
 
 	qcmd.on_heap = 0;
 	qcmd.type = MSM_CAM_Q_CTRL;
 	qcmd.command = &udata;
 
-#if defined(CONFIG_MACH_ACER_A1)
-	if(udata.type == 42) {
-		printk("the type of data is  %hu\n ",udata.type);
-		get_pict_abort = 1;
-		wake_up(&sync->pict_q.wait);
-	}
-#endif
 
 	if (udata.length) {
 		if (udata.length > sizeof(data)) {
@@ -1540,19 +1533,12 @@ static int __msm_get_pic(struct msm_sync *sync, struct msm_ctrl_cmd *ctrl)
 
 	rc = wait_event_interruptible_timeout(
 			sync->pict_q.wait,
-#if defined(CONFIG_MACH_ACER_A1)
-			!list_empty_careful(&sync->pict_q.list)|| get_pict_abort,
-#else
-			!list_empty_careful(&sync->pict_q.list),
-#endif
+			!list_empty_careful(&sync->pict_q.list)|| sync->get_pic_abort,
 			msecs_to_jiffies(tm));
-#if defined(CONFIG_MACH_ACER_A1)
-	if(get_pict_abort == 1) {
-		get_pict_abort = 0;
-		CDBG("inside get_pict_abort \n");
-		return -ENODEV;
+	if(sync->get_pic_abort == 1) {
+		sync->get_pic_abort = 0;
+		return -ENODATA;
 	}
-#endif
 	if (list_empty_careful(&sync->pict_q.list)) {
 		if (rc == 0)
 			return -ETIMEDOUT;
@@ -2205,6 +2191,7 @@ static int __msm_open(struct msm_sync *sync, const char *const apps_id)
 
 		msm_camvfe_fn_init(&sync->vfefn, sync);
 		if (sync->vfefn.vfe_init) {
+			sync->get_pic_abort = 0;
 			rc = sync->vfefn.vfe_init(&msm_vfe_s,
 				sync->pdev);
 			if (rc < 0) {
@@ -2243,10 +2230,6 @@ static int msm_open_common(struct inode *inode, struct file *filep,
 	int rc;
 	struct msm_device *pmsm =
 		container_of(inode->i_cdev, struct msm_device, cdev);
-
-#if defined(CONFIG_MACH_ACER_A1)
-        get_pict_abort = 0;
-#endif
 
 	CDBG("%s: open %s\n", __func__, filep->f_path.dentry->d_name.name);
 
