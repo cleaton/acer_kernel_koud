@@ -104,11 +104,10 @@ static int avr_ioctl(struct inode *inode, struct file *file, unsigned int cmd, u
 static int i2c_write(struct i2c_client *client, char *buf);
 static int i2c_read(struct i2c_client *client, char *buf, int count);
 static void led_on(struct i2c_client *client);
-#if 0
 static void led_off(struct i2c_client *client);
-#endif
 static void low_power_mode(struct i2c_client *client, int mode);
 static void key_clear(struct i2c_client *client);
+static void avr_led_work_func(struct work_struct *work);
 #ifdef CONFIG_HAS_EARLYSUSPEND
 static void avr_early_suspend(struct early_suspend *h);
 static void avr_early_resume(struct early_suspend *h);
@@ -119,6 +118,8 @@ static bool kpd_fw_check = false;
 static bool kpd_resume_check = true;
 static bool kpd_pwr_key_check = false;
 static struct mutex avr_mutex;
+static struct delayed_work led_wq;
+
 
 static const struct i2c_device_id avr_id[] = {
 	{ AVR_DRIVER_NAME, 0 },
@@ -262,6 +263,8 @@ static int avr_probe(struct i2c_client *client, const struct i2c_device_id *id)
 	INIT_WORK(&avr_data.work, avr_work_func);
 	init_waitqueue_head(&avr_data.wait);
 
+	INIT_DELAYED_WORK(&led_wq, avr_led_work_func);
+
 	/* input register */
 	avr_data.input = input_allocate_device();
 	if (avr_data.input == NULL) {
@@ -383,6 +386,7 @@ static void avr_early_suspend(struct early_suspend *h)
 
 	kpd_resume_check = false;
 	key_clear(avr_data.client);
+	led_off(avr_data.client);
 	disable_irq(avr_data.client->irq);
 	low_power_mode(avr_data.client,1);
 
@@ -460,6 +464,16 @@ static void avr_work_func(struct work_struct *work)
 		mutex_unlock(&avr_mutex);
 		return;
 	}
+	
+	cancel_delayed_work(&led_wq);
+
+	/* TODO: Check KPD LED Function */
+	if ( key_st != 0)
+		led_on(client);
+	else
+		schedule_delayed_work(&led_wq, msecs_to_jiffies(AVR_LED_DELAY_TIME));
+
+
 
 	if(kpd_fw_check) {
 		switch(key_st){
@@ -748,7 +762,7 @@ static void led_on(struct i2c_client *client){
 	data_buf[1] = AVR_LED_ON;
 	i2c_write(client, data_buf);
 }
-#if 0
+
 static void led_off(struct i2c_client *client){
 	uint8_t data_buf[2] = {0};
 
@@ -762,7 +776,7 @@ static void led_off(struct i2c_client *client){
 	data_buf[1] = AVR_LED_OFF;
 	i2c_write(client, data_buf);
 }
-#endif
+
 static void low_power_mode(struct i2c_client *client, int mode){
 	uint8_t data_buf[2] = {0};
 
@@ -788,6 +802,11 @@ static void key_clear(struct i2c_client *client){
 	i2c_read(client, data_buf, 1);
 
 	pr_debug("[AVR] Clear Key Value.\n");
+}
+
+static void avr_led_work_func(struct work_struct *work) {
+	led_off(avr_data.client);
+	pr_debug("[AVR] Enter LED delay 5 Sec\n");
 }
 
 module_init(avr_init);
