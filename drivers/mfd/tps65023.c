@@ -118,6 +118,7 @@ EXPORT_SYMBOL(tps65023_get_dcdc1_level);
 static int tps65023_probe(struct i2c_client *client,
 		const struct i2c_device_id *dev_id)
 {
+	int i;
 	if (!i2c_check_functionality(client->adapter,
 				I2C_FUNC_SMBUS_BYTE_DATA)) {
 		printk(KERN_ERR "TPS65023 does not support SMBUS_BYTE_DATA.\n");
@@ -126,6 +127,9 @@ static int tps65023_probe(struct i2c_client *client,
 
 	tpsclient = client;
 	printk(KERN_INFO "TPS65023: PMIC probed.\n");
+
+	tps65023_get_dcdc1_level(&i);
+	printk(KERN_INFO "TPS65023: Current dcdc1 level is: %dmV\n", i);
 	return 0;
 }
 
