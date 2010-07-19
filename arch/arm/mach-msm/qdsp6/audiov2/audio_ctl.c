@@ -1,6 +1,8 @@
-/*
+/* arch/arm/mach-msm/qdsp6/audiov2/audio_ctrl.c
+ *
  * Copyright (C) 2009 Google, Inc.
  * Copyright (C) 2009 HTC Corporation
+ * Copyright (c) 2009, Code Aurora Forum. All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -19,15 +21,14 @@
 #include <linux/uaccess.h>
 #include <linux/msm_audio.h>
 
-#include <mach/msm_qdsp6_audio.h>
+#include <mach/msm_qdsp6_audiov2.h>
 
 #define BUFSZ (0)
 
 static DEFINE_MUTEX(voice_lock);
 static int voice_started;
 
-static struct audio_client *voc_tx_clnt;
-static struct audio_client *voc_rx_clnt;
+static struct audio_client *voc_clnt;
 
 static int q6_voice_start(void)
 {
@@ -41,18 +42,11 @@ static int q6_voice_start(void)
 		goto done;
 	}
 
-	voc_tx_clnt = q6voice_open(AUDIO_FLAG_WRITE);
-	if (!voc_tx_clnt) {
-		pr_err("voice: open voice tx failed.\n");
+	voc_clnt = q6voice_open();
+	if (!voc_clnt) {
+		pr_err("voice: open voice failed.\n");
 		rc = -ENOMEM;
 		goto done;
-	}
-
-	voc_rx_clnt = q6voice_open(AUDIO_FLAG_READ);
-	if (!voc_rx_clnt) {
-		pr_err("voice: open voice rx failed.\n");
-		q6voice_close(voc_tx_clnt);
-		rc = -ENOMEM;
 	}
 
 	voice_started = 1;
@@ -65,8 +59,7 @@ static int q6_voice_stop(void)
 {
 	mutex_lock(&voice_lock);
 	if (voice_started) {
-		q6voice_close(voc_tx_clnt);
-		q6voice_close(voc_rx_clnt);
+		q6voice_close(voc_clnt);
 		voice_started = 0;
 	}
 	mutex_unlock(&voice_lock);
@@ -87,11 +80,9 @@ static int q6_ioctl(struct inode *inode, struct file *file,
 
 	switch (cmd) {
 	case AUDIO_SWITCH_DEVICE:
-		rc = copy_from_user(&id, (void *)arg, sizeof(id));
-		if (!rc) {
-			rc = q6audio_do_routing(id[0], id[1]);
-			pr_info("[Audio_CTL] id[0] = 0x%x, id[1] = 0x%x\n",id[0], id[1]);
-		}
+		rc = copy_from_user(&n, (void *)arg, sizeof(n));
+		if (!rc)
+			rc = q6audio_do_routing(n);
 		break;
 	case AUDIO_SET_VOLUME:
 		rc = copy_from_user(&n, (void *)arg, sizeof(n));
@@ -106,16 +97,13 @@ static int q6_ioctl(struct inode *inode, struct file *file,
 	case AUDIO_UPDATE_ACDB:
 		rc = copy_from_user(&id, (void *)arg, sizeof(id));
 		if (!rc)
-			rc = q6audio_update_acdb(id[0], 0);
+			rc = q6audio_update_acdb(id[0], id[1]);
 		break;
 	case AUDIO_START_VOICE:
 		rc = q6_voice_start();
 		break;
 	case AUDIO_STOP_VOICE:
 		rc = q6_voice_stop();
-		break;
-	case AUDIO_REINIT_ACDB:
-		rc = 0;
 		break;
 	default:
 		rc = -EINVAL;
@@ -130,7 +118,7 @@ static int q6_release(struct inode *inode, struct file *file)
 	return 0;
 }
 
-static struct file_operations q6_dev_fops = {
+static const struct file_operations q6_dev_fops = {
 	.owner		= THIS_MODULE,
 	.open		= q6_open,
 	.ioctl		= q6_ioctl,
@@ -144,7 +132,8 @@ struct miscdevice q6_control_device = {
 };
 
 
-static int __init q6_audio_ctl_init(void) {
+static int __init q6_audio_ctl_init(void)
+{
 	return misc_register(&q6_control_device);
 }
 

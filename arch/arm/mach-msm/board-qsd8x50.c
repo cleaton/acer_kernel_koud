@@ -122,7 +122,6 @@
 
 #define MSM_PMEM_ADSP_SIZE	0x2196000
 #define MSM_FB_SIZE		0x177000
-#define MSM_AUDIO_SIZE          0x80000
 #define MSM_GPU_PHYS_SIZE 	SZ_2M
 
 #ifdef CONFIG_MSM_SOC_REV_A
@@ -3400,13 +3399,6 @@ static void __init qsd8x50_allocate_memory_regions(void)
 		pr_info("using %lu bytes of EBI1 at %lx physical for fb\n",
 		       size, (unsigned long)addr);
 	}
-
-	size = MSM_AUDIO_SIZE;
-	addr = alloc_bootmem(size);
-	msm_audio_resources[0].start = __pa(addr);
-	msm_audio_resources[0].end = msm_audio_resources[0].start + size - 1;
-	pr_info("allocating %lu bytes at %p (%lx physical) for audio\n",
-			size, addr, __pa(addr));
 }
 
 static void __init qsd8x50_map_io(void)
