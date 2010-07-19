@@ -22,4 +22,4 @@ obj-$(CONFIG_QSD_AUDIO) += msm8k_qcelp13k_in.o
 obj-$(CONFIG_AUDIO_FM2018)  += fm2018.o
 obj-$(CONFIG_AUDIO_TPA2018)  += tpa2018.o
 
-obj-y += audio_ctl.o msm_q6vdec.o dal.o msm_q6venc.o
+obj-y += audio_ctl.o msm_q6vdec.o
