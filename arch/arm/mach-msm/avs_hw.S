@@ -58,6 +58,7 @@
 	.text
 
 	.global avs_test_delays
+.fpu neon
 avs_test_delays:
 
 /*      Read r1=CPMR and enable Never Sleep for VSLPDLY */
