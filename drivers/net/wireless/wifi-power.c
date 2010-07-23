@@ -30,6 +30,13 @@
 static int wifi_power_state;
 static int (*power_control)(int enable);
 
+static char firmware_path[64];
+static char nvram_path[64];
+
+/* load firmware and/or nvram values from the filesystem */
+module_param_string(firmware_path, firmware_path, 64, 0);
+module_param_string(nvram_path, nvram_path, 64, 0);
+
 
 static int wifi_power_param_set(const char *val, struct kernel_param *kp)
 {
@@ -75,6 +82,7 @@ static int __init_or_module wifi_power_probe(struct platform_device *pdev)
 
 	power_control = pdev->dev.platform_data;
 
+	wifi_power_state=1;
 	if (wifi_power_state) {
 		pr_info(
 			"%s: handling deferred power switch\n",
