@@ -47,7 +47,7 @@ config MMC_PARANOID_SD_INIT
 	  if you are experiencing issues with SD detection.
 
 config MMC_WIFI
-	boolean "Enable Wifi relation MMC function"
+	tristate "Enable Wifi relation MMC function"
 	depends on MMC && MMC_MSM_SDC2_SUPPORT
 	help
 	  If you say Y here, the Wifi Clock will be set indicate value.

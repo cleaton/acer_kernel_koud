@@ -146,7 +146,7 @@
 
 static DEFINE_MUTEX(wifibtmutex);
 
-#if defined(CONFIG_MMC_WIFI)
+#if defined(CONFIG_MMC_WIFI) || defined(CONFIG_MMC_WIFI_MODULE)
 #define WL_PWR_EN 109
 #define WL_RST 147
 
@@ -1765,7 +1765,7 @@ exit:
 #define bt_power_init(x) do {} while (0)
 #endif //def CONFIG_BT
 
-#if defined(CONFIG_MMC_WIFI)
+#if defined(CONFIG_MMC_WIFI) || defined(CONFIG_MMC_WIFI_MODULE)
 //for Wifi Module Card Detect
 static struct platform_device msm_wifi_power_device = {
 	.name = "wifi_power",
@@ -2651,7 +2651,7 @@ static struct platform_device *devices[] __initdata = {
 #ifdef CONFIG_BT
 	&msm_bt_power_device,
 #endif
-#if defined(CONFIG_MMC_WIFI)
+#if defined(CONFIG_MMC_WIFI) || defined(CONFIG_MMC_WIFI_MODULE)
 	&msm_wifi_power_device,
 #endif
 #if !defined(CONFIG_MSM_SERIAL_DEBUGGER)
@@ -3030,7 +3030,7 @@ static struct mmc_platform_data qsd8x50_sdc1_data = {
 };
 #endif
 
-#if defined(CONFIG_MMC_WIFI)
+#if defined(CONFIG_MMC_WIFI) || defined(CONFIG_MMC_WIFI_MODULE)
 static struct mmc_platform_data qsd8x50_sdcc2_wifi = {
     .ocr_mask = MMC_VDD_27_28 | MMC_VDD_28_29,
     .translate_vdd = msm_sdcc_setup_power,
@@ -3101,7 +3101,7 @@ static void __init qsd8x50_init_mmc(void)
 	msm_add_sdcc(1, &qsd8x50_sdc1_data);
 #endif
 
-#if defined(CONFIG_MMC_MSM_SDC2_SUPPORT) && defined(CONFIG_MMC_WIFI) && defined(CONFIG_MACH_ACER_A1)
+#if defined(CONFIG_MMC_MSM_SDC2_SUPPORT) && ( defined(CONFIG_MMC_WIFI) || defined(CONFIG_MMC_WIFI_MODULE) ) && defined(CONFIG_MACH_ACER_A1)
 	msm_add_sdcc(2, &qsd8x50_sdcc2_wifi);
 #endif
 
@@ -3303,7 +3303,7 @@ static void __init qsd8x50_init(void)
 #endif
 	qsd8x50_init_mmc();
 	bt_power_init();
-#if defined(CONFIG_MMC_WIFI)
+#if defined(CONFIG_MMC_WIFI) || defined(CONFIG_MMC_WIFI_MODULE)
 	wifi_power_init();
 #endif
 	audio_gpio_init();

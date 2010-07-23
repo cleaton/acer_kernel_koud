@@ -39,7 +39,7 @@
 
 #include <linux/gpio.h>
 #include <mach/gpio.h>
-#if defined(CONFIG_MMC_WIFI)
+#if defined(CONFIG_MMC_WIFI) || defined(CONFIG_MMC_WIFI_MODULE)
 #define WL_PWR_EN 109
 #define WL_RST 147
 #endif
