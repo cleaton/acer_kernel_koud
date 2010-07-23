@@ -195,9 +195,9 @@ static struct usb_composition usb_func_composition[] = {
 	{
 		.product_id         = 0x3203,
 		/* DIAG + ADB + GENERIC MODEM + GENERIC NMEA + MSC+ RNDIS*/
-		.functions          = 0x2764,
+		.functions          = 0x82764,
 		.adb_product_id     = 0x3202,
-		.adb_functions      = 0x27614,
+		.adb_functions      = 0x827614,
 	},
 };
 #else
