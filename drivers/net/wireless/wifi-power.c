@@ -26,7 +26,6 @@
 #include <linux/moduleparam.h>
 #include <linux/kernel.h>
 #include <linux/platform_device.h>
-#include <linux/wakelock.h>
 
 static int wifi_power_state;
 static int (*power_control)(int enable);
@@ -38,7 +37,6 @@ static char nvram_path[64];
 module_param_string(firmware_path, firmware_path, 64, 0);
 module_param_string(nvram_path, nvram_path, 64, 0);
 
-static struct wake_lock wifi_wake_lock;
 
 static int wifi_power_param_set(const char *val, struct kernel_param *kp)
 {
@@ -51,13 +49,9 @@ static int wifi_power_param_set(const char *val, struct kernel_param *kp)
 	/* lock change of state and reference */
 	ret = param_set_bool(val, kp);
 	if (power_control) {
-		if (!ret) {
+		if (!ret)
 			ret = (*power_control)(wifi_power_state);
-			if(wifi_power_state)
-				wake_lock(&wifi_wake_lock);
-			else
-				wake_lock_timeout(&wifi_wake_lock, HZ*5); //5s to shutdown wifi ?
-		} else
+		else
 			pr_err("%s param set bool failed (%d)\n",
 					__func__, ret);
 	} else {
@@ -88,7 +82,6 @@ static int __init_or_module wifi_power_probe(struct platform_device *pdev)
 
 	power_control = pdev->dev.platform_data;
 
-	wake_lock_init(&wifi_wake_lock, WAKE_LOCK_SUSPEND, "wifi-interface");
 	wifi_power_state=1;
 	if (wifi_power_state) {
 		pr_info(
@@ -112,7 +105,6 @@ static int wifi_power_remove(struct platform_device *pdev)
 	wifi_power_state = 0;
 	ret = (*power_control)(wifi_power_state);
 	power_control = NULL;
-	wake_lock_destroy(&wifi_wake_lock);
 
 	return ret;
 }
