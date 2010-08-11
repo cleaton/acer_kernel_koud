@@ -35,6 +35,16 @@ static inline dma_addr_t page_to_dma(struct device *dev, struct page *page)
 	return __arch_page_to_dma(dev, page);
 }
 
+static inline struct page *dma_to_page(struct device *dev, dma_addr_t addr)
+{
+	return pfn_to_page(__bus_to_pfn(addr));
+}
+
+static inline struct page *dma_to_page(struct device *dev, dma_addr_t addr)
+{
+	return __arch_dma_to_page(dev, addr);
+}
+
 static inline void *dma_to_virt(struct device *dev, dma_addr_t addr)
 {
 	return __arch_dma_to_virt(dev, addr);
