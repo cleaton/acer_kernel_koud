@@ -92,6 +92,52 @@ static int tca6507_ioctl(struct inode *inode, struct file *file, unsigned int cm
 static int i2c_read(struct i2c_client *client, char *buf, int count);
 static int i2c_write(struct i2c_client *client, char *buf);
 static struct i2c_driver tca6507_driver;
+//
+// Access through /sys for easier handling in homebrew.
+static ssize_t mail_store(struct class *class, const char *buf,
+		size_t count) {
+	uint32_t value;
+	if (sscanf(buf, "%d", &value) != 1)
+		return -EINVAL;
+	if(value<0 || value > 3)
+		return -EINVAL;
+	tca6507_ioctl(NULL, NULL, IOCTL_SET_MID_LED, value);
+	return count;
+}
+
+static ssize_t call_store(struct class *class, const char *buf,
+		size_t count) {
+	uint32_t value;
+	if (sscanf(buf, "%d", &value) != 1)
+		return -EINVAL;
+	if(value<0 || value > 3)
+		return -EINVAL;
+	tca6507_ioctl(NULL, NULL, IOCTL_SET_RIGHT_LED, value);
+	return count;
+}
+
+static ssize_t power_store(struct class *class, const char *buf,
+		size_t count) {
+	uint32_t value;
+	if (sscanf(buf, "%d", &value) != 1)
+		return -EINVAL;
+	if(value<0 || value > 3)
+		return -EINVAL;
+	tca6507_ioctl(NULL, NULL, IOCTL_SET_LEFT_LED, value);
+	return count;
+}
+
+static struct class_attribute leds2_class_attrs[] = {
+	__ATTR(mail, 0222, NULL, mail_store),
+	__ATTR(call, 0222, NULL, call_store),
+	__ATTR(power, 0222, NULL, power_store),
+	__ATTR_NULL,
+};
+
+static struct class leds2_class = {
+	.name = "leds2",
+	.class_attrs = leds2_class_attrs,
+};
 
 static const struct i2c_device_id tca6507_id[] = {
 	{ LED_DRIVER_NAME, 0 },
@@ -221,6 +267,7 @@ static int tca6507_probe(struct i2c_client *client, const struct i2c_device_id *
 	if (err)
 		goto error;
 	pr_debug("[LED]probe done\n");
+	class_register(&leds2_class);
 	return 0;
 error:
 	gpio_free(TCA6507_GPIO_EN_PIN);
@@ -453,6 +500,7 @@ static int i2c_write(struct i2c_client *client, char *buf){
 	}
 	return 0;
 }
+
 
 module_init(tca6507_init);
 module_exit(tca6507_exit);
