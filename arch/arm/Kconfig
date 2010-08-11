@@ -947,6 +947,13 @@ config NODES_SHIFT
 	default "2"
 	depends on NEED_MULTIPLE_NODES
 
+config VMALLOC_RESERVE
+	hex "Reserved vmalloc space"
+	default 0x08000000
+	depends on MMU
+	help
+	  Reserved vmalloc space if not specified on the kernel commandline.
+
 source "mm/Kconfig"
 
 config ARCH_MEMORY_PROBE
