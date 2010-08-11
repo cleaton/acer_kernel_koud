@@ -70,6 +70,7 @@
 #include <linux/power_supply.h>
 #include <linux/clk.h>
 #include <linux/mutex.h>
+#include <linux/wakelock.h>
 
 #include <asm/mach-types.h>
 #include <asm/mach/arch.h>
@@ -1786,6 +1787,7 @@ static struct embedded_sdio_data bcm_wifi_emb_data = {
 };
 
 //When sue Android UI to Open Wifi and open Wifi Power
+static struct wake_lock wifi_wake_lock;
 static int wifi_power(int on)
 {
     int bt_on = 0;
@@ -1795,6 +1797,7 @@ static int wifi_power(int on)
 
     if (on) {
         mutex_lock(&wifibtmutex);
+	wake_lock(&wifi_wake_lock);
         bt_on=gpio_get_value(106);
         if(!bt_on){
             //if WLAN on and BT off
@@ -1818,6 +1821,7 @@ static int wifi_power(int on)
         mutex_unlock(&wifibtmutex);
 
     } else {
+	    wake_lock_timeout(&wifi_wake_lock, 3*HZ);
         gpio_set_value(WL_PWR_EN, 0); /* WL_PWR_EN */
         msleep(100);
         gpio_set_value(WL_RST, 0); /* WL_RST */
@@ -1830,6 +1834,7 @@ static int wifi_power(int on)
 
 static void __init wifi_power_init(void)
 {
+	wake_lock_init(&wifi_wake_lock, WAKE_LOCK_SUSPEND, "wifi-interface");
 	msm_wifi_power_device.dev.platform_data = &wifi_power;
 }
 
