@@ -537,7 +537,7 @@ uint32_t flash_onfi_probe(struct msm_nand_chip *chip)
 	if (dma_mapping_error(chip->dev, dma_addr_param_info)) {
 		pr_err("flash_onfi_probe: failed to get dma addr for %p\n",
 				onfi_param_info_buf);
-		dma_unmap_page(chip->dev, dma_addr_identifier,
+		dma_unmap_single(chip->dev, dma_addr_identifier,
 				ONFI_IDENTIFIER_LENGTH, DMA_FROM_DEVICE);
 		err = -EIO;
 		goto err_free_and_return;
@@ -749,31 +749,15 @@ uint32_t flash_onfi_probe(struct msm_nand_chip *chip)
 	}
 
 	msm_nand_release_dma_buffer(chip, dma_buffer, sizeof(*dma_buffer));
-	dma_unmap_page(chip->dev, dma_addr_identifier,
+	dma_unmap_single(chip->dev, dma_addr_identifier,
 			ONFI_IDENTIFIER_LENGTH, DMA_FROM_DEVICE);
-	dma_unmap_page(chip->dev, dma_addr_param_info,
+	dma_unmap_single(chip->dev, dma_addr_param_info,
 			ONFI_PARAM_INFO_LENGTH, DMA_FROM_DEVICE);
 
 err_free_and_return:
 	kfree(onfi_identifier_buf);
 	kfree(onfi_param_info_buf);
 	return err;
-}
-
-static dma_addr_t
-msm_nand_dma_map(struct device *dev, void *addr, size_t size,
-		 enum dma_data_direction dir)
-{
-	struct page *page;
-	unsigned long offset = (unsigned long)addr & ~PAGE_MASK;
-	if (virt_addr_valid(addr))
-		page = virt_to_page(addr);
-	else {
-		if (WARN_ON(size + offset > PAGE_SIZE))
-			return ~0;
-		page = vmalloc_to_page(addr);
-	}
-	return dma_map_page(dev, page, offset, size, dir);
 }
 
 static int msm_nand_read_oob(struct mtd_info *mtd, loff_t from,
@@ -882,8 +866,8 @@ static int msm_nand_read_oob(struct mtd_info *mtd, loff_t from,
 	if (ops->datbuf) {
 		/* memset(ops->datbuf, 0x55, ops->len); */
 		data_dma_addr_curr = data_dma_addr =
-			msm_nand_dma_map(chip->dev, ops->datbuf, ops->len,
-					 DMA_FROM_DEVICE);
+			dma_map_single(chip->dev, ops->datbuf, ops->len,
+				       DMA_FROM_DEVICE);
 		if (dma_mapping_error(chip->dev, data_dma_addr)) {
 			pr_err("msm_nand_read_oob: failed to get dma addr "
 			       "for %p\n", ops->datbuf);
@@ -893,8 +877,8 @@ static int msm_nand_read_oob(struct mtd_info *mtd, loff_t from,
 	if (ops->oobbuf) {
 		memset(ops->oobbuf, 0xff, ops->ooblen);
 		oob_dma_addr_curr = oob_dma_addr =
-			msm_nand_dma_map(chip->dev, ops->oobbuf,
-					 ops->ooblen, DMA_BIDIRECTIONAL);
+			dma_map_single(chip->dev, ops->oobbuf,
+				       ops->ooblen, DMA_BIDIRECTIONAL);
 		if (dma_mapping_error(chip->dev, oob_dma_addr)) {
 			pr_err("msm_nand_read_oob: failed to get dma addr "
 			       "for %p\n", ops->oobbuf);
@@ -1162,12 +1146,12 @@ static int msm_nand_read_oob(struct mtd_info *mtd, loff_t from,
 	msm_nand_release_dma_buffer(chip, dma_buffer, sizeof(*dma_buffer));
 
 	if (ops->oobbuf) {
-		dma_unmap_page(chip->dev, oob_dma_addr,
+		dma_unmap_single(chip->dev, oob_dma_addr,
 				 ops->ooblen, DMA_FROM_DEVICE);
 	}
 err_dma_map_oobbuf_failed:
 	if (ops->datbuf) {
-		dma_unmap_page(chip->dev, data_dma_addr,
+		dma_unmap_single(chip->dev, data_dma_addr,
 				 ops->len, DMA_BIDIRECTIONAL);
 	}
 
@@ -2001,12 +1985,12 @@ static int msm_nand_read_oob_dualnandc(struct mtd_info *mtd, loff_t from,
 	msm_nand_release_dma_buffer(chip, dma_buffer, sizeof(*dma_buffer));
 
 	if (ops->oobbuf) {
-		dma_unmap_page(chip->dev, oob_dma_addr,
+		dma_unmap_single(chip->dev, oob_dma_addr,
 				 ops->ooblen, DMA_FROM_DEVICE);
 	}
 err_dma_map_oobbuf_failed:
 	if (ops->datbuf) {
-		dma_unmap_page(chip->dev, data_dma_addr,
+		dma_unmap_single(chip->dev, data_dma_addr,
 				 ops->len, DMA_BIDIRECTIONAL);
 	}
 
@@ -2135,8 +2119,8 @@ msm_nand_write_oob(struct mtd_info *mtd, loff_t to, struct mtd_oob_ops *ops)
 
 	if (ops->datbuf) {
 		data_dma_addr_curr = data_dma_addr =
-			msm_nand_dma_map(chip->dev, ops->datbuf,
-					 ops->len, DMA_TO_DEVICE);
+			dma_map_single(chip->dev, ops->datbuf,
+				       ops->len, DMA_TO_DEVICE);
 		if (dma_mapping_error(chip->dev, data_dma_addr)) {
 			pr_err("msm_nand_write_oob: failed to get dma addr "
 			       "for %p\n", ops->datbuf);
@@ -2145,8 +2129,8 @@ msm_nand_write_oob(struct mtd_info *mtd, loff_t to, struct mtd_oob_ops *ops)
 	}
 	if (ops->oobbuf) {
 		oob_dma_addr_curr = oob_dma_addr =
-			msm_nand_dma_map(chip->dev, ops->oobbuf,
-					 ops->ooblen, DMA_TO_DEVICE);
+			dma_map_single(chip->dev, ops->oobbuf,
+				       ops->ooblen, DMA_TO_DEVICE);
 		if (dma_mapping_error(chip->dev, oob_dma_addr)) {
 			pr_err("msm_nand_write_oob: failed to get dma addr "
 			       "for %p\n", ops->oobbuf);
@@ -2353,11 +2337,11 @@ msm_nand_write_oob(struct mtd_info *mtd, loff_t to, struct mtd_oob_ops *ops)
 	msm_nand_release_dma_buffer(chip, dma_buffer, sizeof(*dma_buffer));
 
 	if (ops->oobbuf)
-		dma_unmap_page(chip->dev, oob_dma_addr,
+		dma_unmap_single(chip->dev, oob_dma_addr,
 				 ops->ooblen, DMA_TO_DEVICE);
 err_dma_map_oobbuf_failed:
 	if (ops->datbuf)
-		dma_unmap_page(chip->dev, data_dma_addr, ops->len,
+		dma_unmap_single(chip->dev, data_dma_addr, ops->len,
 				DMA_TO_DEVICE);
 	if (err)
 		pr_err("msm_nand_write_oob %llx %x %x failed %d\n",
@@ -2649,10 +2633,10 @@ msm_nand_write_oob_in_panic(struct mtd_info *mtd, loff_t to, struct mtd_oob_ops 
 	msm_nand_release_dma_buffer_in_panic(chip, dma_buffer, sizeof(*dma_buffer));
 
 	if (ops->oobbuf)
-		dma_unmap_page(chip->dev, oob_dma_addr, ops->ooblen, DMA_TO_DEVICE);
+		dma_unmap_single(chip->dev, oob_dma_addr, ops->ooblen, DMA_TO_DEVICE);
 err_dma_map_oobbuf_failed:
 	if (ops->datbuf)
-		dma_unmap_page(chip->dev, data_dma_addr, ops->len, DMA_TO_DEVICE);
+		dma_unmap_single(chip->dev, data_dma_addr, ops->len, DMA_TO_DEVICE);
 	if (err)
 		pr_err("msm_nand_write_oob %llx %x %x failed %d\n",
 		       to, ops->len, ops->ooblen, err);
@@ -3250,11 +3234,11 @@ msm_nand_write_oob_dualnandc(struct mtd_info *mtd, loff_t to,
 	msm_nand_release_dma_buffer(chip, dma_buffer, sizeof(*dma_buffer));
 
 	if (ops->oobbuf)
-		dma_unmap_page(chip->dev, oob_dma_addr,
+		dma_unmap_single(chip->dev, oob_dma_addr,
 				 ops->ooblen, DMA_TO_DEVICE);
 err_dma_map_oobbuf_failed:
 	if (ops->datbuf)
-		dma_unmap_page(chip->dev, data_dma_addr, ops->len,
+		dma_unmap_single(chip->dev, data_dma_addr, ops->len,
 				DMA_TO_DEVICE);
 	if (err)
 		pr_err("msm_nand_write_oob_dualnandc %llx %x %x failed %d\n",
@@ -4898,12 +4882,12 @@ int msm_onenand_read_oob(struct mtd_info *mtd,
 	msm_nand_release_dma_buffer(chip, dma_buffer, sizeof(*dma_buffer));
 
 	if (ops->oobbuf) {
-		dma_unmap_page(chip->dev, oob_dma_addr, ops->ooblen,
+		dma_unmap_single(chip->dev, oob_dma_addr, ops->ooblen,
 				DMA_FROM_DEVICE);
 	}
 err_dma_map_oobbuf_failed:
 	if (ops->datbuf) {
-		dma_unmap_page(chip->dev, data_dma_addr, ops->len,
+		dma_unmap_single(chip->dev, data_dma_addr, ops->len,
 				DMA_FROM_DEVICE);
 	}
 
@@ -5640,16 +5624,16 @@ static int msm_onenand_write_oob(struct mtd_info *mtd, loff_t to,
 
 	msm_nand_release_dma_buffer(chip, dma_buffer, sizeof(*dma_buffer));
 
-	dma_unmap_page(chip->dev, init_dma_addr, 64, DMA_TO_DEVICE);
+	dma_unmap_single(chip->dev, init_dma_addr, 64, DMA_TO_DEVICE);
 
 err_dma_map_initbuf_failed:
 	if (ops->oobbuf) {
-		dma_unmap_page(chip->dev, oob_dma_addr, ops->ooblen,
+		dma_unmap_single(chip->dev, oob_dma_addr, ops->ooblen,
 							DMA_TO_DEVICE);
 	}
 err_dma_map_oobbuf_failed:
 	if (ops->datbuf) {
-		dma_unmap_page(chip->dev, data_dma_addr, ops->len,
+		dma_unmap_single(chip->dev, data_dma_addr, ops->len,
 							DMA_TO_DEVICE);
 	}
 
