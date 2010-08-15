@@ -1862,6 +1862,20 @@ int wifi_set_carddetect(int val)
 }
 
 EXPORT_SYMBOL(wifi_set_carddetect);
+int bcm_wlan_power_off(int a) {
+	(void)a;
+	wifi_power(0);
+	wifi_set_carddetect(0);
+}
+EXPORT_SYMBOL(bcm_wlan_power_off);
+
+int bcm_wlan_power_on(int a) {
+	(void)a;
+	wifi_power(1);
+	wifi_set_carddetect(1);
+}
+EXPORT_SYMBOL(bcm_wlan_power_on);
+
 
 #endif//def CONFIG_MMC_WIFI
 
