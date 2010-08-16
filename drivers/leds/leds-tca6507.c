@@ -46,11 +46,11 @@
 #define SECOND_FULLY_OFF_TIME_ADDR  0x7
 #define MAX_INTENSITY_ADDR          0x8
 
-#define FADE_ON_TIME_DATA           0x53
-#define FULLY_ON_TIME_DATA          0x0
-#define FADE_OFF_TIME_DATA          0x53
-#define FIRST_FULLY_OFF_TIME_DATA   0xC8
-#define SECOND_FULLY_OFF_TIME_DATA  0xC8
+#define FADE_ON_TIME_DATA           0x31
+#define FULLY_ON_TIME_DATA          0x40
+#define FADE_OFF_TIME_DATA          0x31
+#define FIRST_FULLY_OFF_TIME_DATA   0x62
+#define SECOND_FULLY_OFF_TIME_DATA  0x62
 #define MAX_INTENSITY_DATA          0xFF
 
 
