@@ -13,7 +13,7 @@ if head=`git rev-parse --verify --short HEAD 2>/dev/null`; then
 	# Do we have an untagged version?
 	if git name-rev --tags HEAD | grep -E '^HEAD[[:space:]]+(.*~[0-9]*|undefined)$' > /dev/null; then
 		if tag=`git describe 2>/dev/null`; then
-			echo $tag | awk -F- '{printf("-%05d-%s", $(NF-1),$(NF))}'
+			echo $tag | awk -F- '{printf("%s-%s-%05d-%s", $(NF-3), $(NF-2), $(NF-1),$(NF))}'
 		else
 			printf '%s%s' -g $head
 		fi
