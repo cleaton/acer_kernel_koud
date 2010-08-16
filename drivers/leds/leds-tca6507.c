@@ -127,10 +127,24 @@ static ssize_t power_store(struct class *class, const char *buf,
 	return count;
 }
 
+//drivers/i2c/chips/avr.c
+void avr_blink(int val);
+static ssize_t bottom_store(struct class *class, const char *buf,
+		size_t count) {
+	uint32_t value;
+	if (sscanf(buf, "%d", &value) != 1)
+		return -EINVAL;
+	//0 leave it to default
+	//1 fast blink (200ms)
+	avr_blink(value);
+	return count;
+}
+
 static struct class_attribute leds2_class_attrs[] = {
 	__ATTR(mail, 0222, NULL, mail_store),
 	__ATTR(call, 0222, NULL, call_store),
 	__ATTR(power, 0222, NULL, power_store),
+	__ATTR(bottom, 0222, NULL, bottom_store),
 	__ATTR_NULL,
 };
 

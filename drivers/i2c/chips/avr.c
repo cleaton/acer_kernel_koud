@@ -139,6 +139,7 @@ static struct avr_data {
 #endif
 	unsigned long last_jiffies;
 	int prekey;
+	int suspended;
 } avr_data;
 
 /*File operation of AVR device file */
@@ -222,20 +223,6 @@ static struct device_attribute avr_fw_attrs =
 __ATTR(fw_check, S_IRUGO,get_avr_firmware, NULL);
 
 #endif
-
-static int __init avr_init(void)
-{
-	int res=0;
-
-	res = i2c_add_driver(&avr_driver);
-
-	if (res){
-		pr_err("[AVR]i2c_add_driver failed! \n");
-		return res;
-	}
-
-	return 0;
-}
 
 static int avr_probe(struct i2c_client *client, const struct i2c_device_id *id)
 {
@@ -385,10 +372,11 @@ static void avr_early_suspend(struct early_suspend *h)
 	pr_debug("[AVR] %s ++ entering\n", __FUNCTION__);
 
 	kpd_resume_check = false;
+	avr_data.suspended=1;
 	key_clear(avr_data.client);
 	led_off(avr_data.client);
 	disable_irq(avr_data.client->irq);
-	low_power_mode(avr_data.client,1);
+	low_power_mode(avr_data.client, 1);
 
 	pr_debug("[AVR] %s -- leaving\n", __FUNCTION__);
 }
@@ -400,6 +388,7 @@ static void avr_early_resume(struct early_suspend *h)
 	low_power_mode(avr_data.client,0);
 	enable_irq(avr_data.client->irq);
 
+	avr_data.suspended=0;
 	kpd_resume_check = true;
 
 	if(kpd_pwr_key_check){
@@ -752,6 +741,8 @@ static int i2c_write(struct i2c_client *client, char *buf)
 static void led_on(struct i2c_client *client){
 	uint8_t data_buf[2] = {0};
 
+	if(!client)
+		return;
 	data_buf[0] = I2C_REG_LED_1;
 	data_buf[1] = AVR_LED_ON;
 	i2c_write(client, data_buf);
@@ -807,6 +798,59 @@ static void key_clear(struct i2c_client *client){
 static void avr_led_work_func(struct work_struct *work) {
 	led_off(avr_data.client);
 	pr_debug("[AVR] Enter LED delay 5 Sec\n");
+}
+
+//Blinking code
+
+static struct delayed_work blink_wq;
+static int status=0;
+
+void avr_blink(int value) {
+	status=0;
+	if(value) {
+		if(avr_data.suspended)
+			low_power_mode(avr_data.client, 0);
+		printk("Scheduling blinking\n");
+		schedule_delayed_work(&blink_wq, msecs_to_jiffies(100));
+	} else {
+		cancel_delayed_work(&blink_wq);
+		if(avr_data.suspended) {
+			low_power_mode(avr_data.client, 1);
+		} else {
+			led_on(avr_data.client);
+			printk("Scheduling 5s off\n");
+			schedule_delayed_work(&led_wq, msecs_to_jiffies(AVR_LED_DELAY_TIME));
+		}
+	}
+}
+
+static void blink_work_func(struct work_struct *work) {
+	status=!status;
+	if(status) {
+		printk("Blink turning on\n");
+		led_on(avr_data.client);
+		schedule_delayed_work(&blink_wq, msecs_to_jiffies(500));
+	} else {
+		printk("Blink turning off\n");
+		led_off(avr_data.client);
+		schedule_delayed_work(&blink_wq, msecs_to_jiffies(4500));
+	}
+}
+
+static int __init avr_init(void)
+{
+	int res=0;
+
+	INIT_DELAYED_WORK(&blink_wq, blink_work_func);
+	cancel_delayed_work(&blink_wq);
+	res = i2c_add_driver(&avr_driver);
+
+	if (res){
+		pr_err("[AVR]i2c_add_driver failed! \n");
+		return res;
+	}
+
+	return 0;
 }
 
 module_init(avr_init);
