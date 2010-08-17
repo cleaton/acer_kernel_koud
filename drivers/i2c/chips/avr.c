@@ -578,6 +578,7 @@ static int avr_ioctl(struct inode *inode, struct file *file, unsigned int cmd, u
 		return -ENOTTY;
 	}
 
+#if 0
 	if(_IOC_DIR(cmd) & _IOC_READ)
 		err = !access_ok(VERIFY_WRITE,(void __user*)arg, _IOC_SIZE(cmd));
 	else if(_IOC_DIR(cmd) & _IOC_WRITE)
@@ -586,6 +587,7 @@ static int avr_ioctl(struct inode *inode, struct file *file, unsigned int cmd, u
 		pr_err("cmd access_ok error\n");
 		return -EFAULT;
 	}
+#endif
 	if( client == NULL){
 		pr_err("I2C driver not install (AVR_ioctl)\n");
 		return -EFAULT;
@@ -665,7 +667,7 @@ static int avr_ioctl(struct inode *inode, struct file *file, unsigned int cmd, u
 		i2c_write(client, data_buf);
 		mutex_unlock(&avr_mutex);
 
-		pr_debug("[AVR] IOCTL_SET_BL_LV, Set backlight 0x%02X. \n", data_buf[1]);
+		pr_debug("[AVR] IOCTL_SET_BL_LV, Set backlight 0x%02X (asked 0x%02X). \n", data_buf[1], arg);
 		return err;
 	case IOCTL_KEY_LOCK_TOGGLE:
 		data_buf[0] = I2C_REG_KEY_LOCK;
