@@ -84,7 +84,7 @@
 #define SENSITIVITY               20
 
 /* Vibrator */
-#define VIB_DELAY_TIME        100
+#define VIB_DELAY_TIME        30
 void pmic_vibrator_on(struct work_struct *work);
 void pmic_vibrator_off(struct work_struct *work);
 
