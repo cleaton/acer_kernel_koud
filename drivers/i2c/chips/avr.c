@@ -84,11 +84,9 @@
 #define SENSITIVITY               20
 
 /* Vibrator */
-#define PM_LIBPROG      0x30000061
-#define PM_LIBVERS      0x10001
-#define ONCRPC_PM_VIB_MOT_SET_VOLT_PROC 22
-#define ONCRPC_PM_VIB_MOT_SET_MODE_PROC 23
-#define VIB_DELAY_TIME        30
+#define VIB_DELAY_TIME        100
+void pmic_vibrator_on(struct work_struct *work);
+void pmic_vibrator_off(struct work_struct *work);
 
 static int __init avr_init(void);
 static int avr_probe(struct i2c_client *client, const struct i2c_device_id *id);
@@ -108,6 +106,7 @@ static void led_off(struct i2c_client *client);
 static void low_power_mode(struct i2c_client *client, int mode);
 static void key_clear(struct i2c_client *client);
 static void avr_led_work_func(struct work_struct *work);
+static void avr_vib_work_func(struct work_struct *work);
 #ifdef CONFIG_HAS_EARLYSUSPEND
 static void avr_early_suspend(struct early_suspend *h);
 static void avr_early_resume(struct early_suspend *h);
@@ -119,14 +118,15 @@ static bool kpd_resume_check = true;
 static bool kpd_pwr_key_check = false;
 static struct mutex avr_mutex;
 static struct delayed_work led_wq;
+static struct delayed_work vib_wq;
 
+static int vibr=1;
+module_param(vibr, int, S_IRUGO | S_IWUSR | S_IWGRP);
 
 static const struct i2c_device_id avr_id[] = {
 	{ AVR_DRIVER_NAME, 0 },
 	{ }
 };
-
-
 
 /* Data for I2C driver */
 static struct avr_data {
@@ -251,6 +251,7 @@ static int avr_probe(struct i2c_client *client, const struct i2c_device_id *id)
 	init_waitqueue_head(&avr_data.wait);
 
 	INIT_DELAYED_WORK(&led_wq, avr_led_work_func);
+	INIT_DELAYED_WORK(&vib_wq, avr_vib_work_func);
 
 	/* input register */
 	avr_data.input = input_allocate_device();
@@ -457,7 +458,7 @@ static void avr_work_func(struct work_struct *work)
 	cancel_delayed_work(&led_wq);
 
 	/* TODO: Check KPD LED Function */
-	if ( key_st != 0)
+	if ( key_st != 0) 
 		led_on(client);
 	else
 		schedule_delayed_work(&led_wq, msecs_to_jiffies(AVR_LED_DELAY_TIME));
@@ -515,6 +516,10 @@ static void avr_work_func(struct work_struct *work)
 	/* Send key release if not equal to last key */
 	if( key_code != avr_data.prekey ){
 		input_report_key(avr_data.input, avr_data.prekey, 0);
+		if(vibr) {
+			pmic_vibrator_on(NULL);
+			schedule_delayed_work(&vib_wq, msecs_to_jiffies(VIB_DELAY_TIME));
+		}
 	}
 	/* Send key press if key_code != 0 */
 	if( key_code ) {
@@ -578,16 +583,6 @@ static int avr_ioctl(struct inode *inode, struct file *file, unsigned int cmd, u
 		return -ENOTTY;
 	}
 
-#if 0
-	if(_IOC_DIR(cmd) & _IOC_READ)
-		err = !access_ok(VERIFY_WRITE,(void __user*)arg, _IOC_SIZE(cmd));
-	else if(_IOC_DIR(cmd) & _IOC_WRITE)
-		err = !access_ok(VERIFY_READ, (void __user*)arg, _IOC_SIZE(cmd));
-	if(err){
-		pr_err("cmd access_ok error\n");
-		return -EFAULT;
-	}
-#endif
 	if( client == NULL){
 		pr_err("I2C driver not install (AVR_ioctl)\n");
 		return -EFAULT;
@@ -800,6 +795,10 @@ static void key_clear(struct i2c_client *client){
 static void avr_led_work_func(struct work_struct *work) {
 	led_off(avr_data.client);
 	pr_debug("[AVR] Enter LED delay 5 Sec\n");
+}
+
+static void avr_vib_work_func(struct work_struct *work) {
+	pmic_vibrator_off(NULL);
 }
 
 //Blinking code

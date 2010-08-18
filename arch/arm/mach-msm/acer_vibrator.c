@@ -47,12 +47,12 @@ static void set_pmic_vibrator(int on)
 
 }
 
-static void pmic_vibrator_on(struct work_struct *work)
+void pmic_vibrator_on(struct work_struct *work)
 {
 	set_pmic_vibrator(1);
 }
 
-static void pmic_vibrator_off(struct work_struct *work)
+void pmic_vibrator_off(struct work_struct *work)
 {
 	set_pmic_vibrator(0);
 }
