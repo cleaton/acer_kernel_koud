@@ -812,7 +812,7 @@ void avr_blink(int value) {
 		if(avr_data.suspended)
 			low_power_mode(avr_data.client, 0);
 		printk("Scheduling blinking\n");
-		schedule_delayed_work(&blink_wq, msecs_to_jiffies(100));
+		schedule_delayed_work(&blink_wq, msecs_to_jiffies(30));
 	} else {
 		cancel_delayed_work(&blink_wq);
 		if(avr_data.suspended) {
