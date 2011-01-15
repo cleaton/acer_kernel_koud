@@ -577,6 +577,31 @@ void __init mem_init(void)
 				    __phys_to_pfn(__pa(swapper_pg_dir)), NULL);
 #endif
 
+
+#define MLK(b, t) b, t, ((t) - (b)) >> 10
+#define MLM(b, t) b, t, ((t) - (b)) >> 20
+#define MLK_ROUNDUP(b, t) b, t, DIV_ROUND_UP(((t) - (b)), SZ_1K)
+	
+        printk(KERN_NOTICE "Virtual kernel memory layout:\n"
+                        "    vector  : 0x%08lx - 0x%08lx   (%4ld kB)\n"
+                        "    vmalloc : 0x%08lx - 0x%08lx   (%4ld MB)\n"
+                        "    lowmem  : 0x%08lx - 0x%08lx   (%4ld MB)\n"
+                        "    modules : 0x%08lx - 0x%08lx   (%4ld MB)\n"
+                        "      .init : 0x%p" " - 0x%p" "   (%4d kB)\n"
+                        "      .text : 0x%p" " - 0x%p" "   (%4d kB)\n"
+                        "      .data : 0x%p" " - 0x%p" "   (%4d kB)\n",
+                        MLK(UL(CONFIG_VECTORS_BASE), UL(CONFIG_VECTORS_BASE) +
+                                (PAGE_SIZE)),
+                        MLM(VMALLOC_START, VMALLOC_END),
+                        MLM(PAGE_OFFSET, (unsigned long)high_memory),
+                        MLM(MODULES_VADDR, MODULES_END),
+                        MLK_ROUNDUP(__init_begin, __init_end),
+                        MLK_ROUNDUP(_text, _etext),
+                        MLK_ROUNDUP(_data, _edata));
+#undef MLK
+#undef MLM
+#undef MLK_ROUNDUP
+
 	/*
 	 * Since our memory may not be contiguous, calculate the
 	 * real number of pages we have in this system
