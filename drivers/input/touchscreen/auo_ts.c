@@ -216,10 +216,26 @@ i2c_err:
 	return -ENXIO;
 }
 
+static bool speedch (int speed, int oldspeed) //check speed changing
+{
+	bool sign1;
+	bool sign2;
+	sign1=(speed==abs(speed)) ? 1 : 0;
+	sign2=(oldspeed==abs(oldspeed)) ? 1 : 0;
+	if ((!speed)||(!oldspeed)) return 0;
+	if (sign1!=sign2) return 1;
+	else return 0;
+}
+
 static void h353vl01_work_func(struct work_struct *work)
 {
 	static int finger2_was_pressed=0,was_pressed;
 	static int oldcoord[2][2]={{0,0},{0,0}};
+	static int mascoord[10][2][2];
+	static int oldspeed[2][2]={{0,0},{0,0}};
+	static int curpos;
+	int speed[2][2]={{0,0},{0,0}};
+	bool flag=0;
 
 	unsigned int coord[2][2];
 	unsigned int rawcoord[2][2];
@@ -254,6 +270,15 @@ static void h353vl01_work_func(struct work_struct *work)
 		coord[0][1]=rawcoord[0][1];
 		coord[1][0]=rawcoord[1][0];
 		coord[1][1]=rawcoord[1][1];
+		//reset mascoord
+		/*for (a=0;a<20;a++)
+		{
+			mascoord[a][0][0]=0;
+			mascoord[a][0][1]=0;
+			mascoord[a][1][0]=0;
+			mascoord[a][1][1]=0;
+		}*/
+		curpos=(-1);
 	} else {
 		if(!was_pressed) {
 			//Ouch, two fingers appear at the same time
@@ -263,9 +288,14 @@ static void h353vl01_work_func(struct work_struct *work)
 			coord[1][0]=rawcoord[1][0];
 			coord[1][1]=rawcoord[1][1];
 		} else {
-#define sq(z) (z)*(z)
-#define dst(x1,y1,x2,y2) (sq(rawcoord[x1][0]-oldcoord[x2][0])+sq(rawcoord[y1][1]-oldcoord[y2][1]))
+#define dst(x1,y1,x2,y2) (abs(rawcoord[x1][0]-oldcoord[x2][0])+abs(rawcoord[y1][1]-oldcoord[y2][1]))
+#define calibrey 250
+#define calibrex 200
+#define massize 5
+#define accuracy 10
 			int i,k=0;
+			int a;
+			int temp;
 			//Do the nearest math only on the first point, the second one can appear anywhere.
 			for(i=1;i<4;++i) {
 				if(dst(i%2, i/2, 0, 0)<dst(k%2, k/2, 0, 0))
@@ -275,7 +305,78 @@ static void h353vl01_work_func(struct work_struct *work)
 			coord[0][1]=rawcoord[k/2][1];
 			coord[1][0]=rawcoord[!(k%2)][0];
 			coord[1][1]=rawcoord[!(k/2)][1];
-		}
+			//writing mascoord
+			if (curpos==massize-1) //mascord filled
+			{
+				for (a=1;a<massize;a++)//move all coordinates
+				{
+					mascoord[a-1][0][0]=mascoord[a][0][0];
+					mascoord[a-1][0][1]=mascoord[a][0][1];
+					mascoord[a-1][1][0]=mascoord[a][1][0];
+					mascoord[a-1][1][1]=mascoord[a][1][1];
+				}
+			}
+			else curpos++;
+			//writing current coord to massive
+			if (curpos){
+				if ((mascoord[curpos-1][0][0]==coord[0][0])&&(mascoord[curpos-1][0][1]==coord[0][1])&&(mascoord[curpos-1][1][0]==coord[1][0])&&(mascoord[curpos-1][1][1]==coord[1][1])) curpos--;//if there is no moving, nothing happens
+				else if ((coord[0][1]==coord[1][1])||(coord[0][0]==coord[1][0])) curpos--;
+				else 
+				{
+					if (abs(coord[0][0]-mascoord[curpos-1][0][0])<accuracy) mascoord[curpos][0][0]=mascoord[curpos-1][0][0];
+					else mascoord[curpos][0][0]=coord[0][0];
+					if (abs(coord[0][1]-mascoord[curpos-1][0][1])<accuracy) mascoord[curpos][0][1]=mascoord[curpos-1][0][1];
+					else mascoord[curpos][0][1]=coord[0][1];
+					if (abs(coord[1][0]-mascoord[curpos-1][1][0])<accuracy) mascoord[curpos][1][0]=mascoord[curpos-1][1][0];
+					else mascoord[curpos][1][0]=coord[1][0];
+					if (abs(coord[1][1]-mascoord[curpos-1][1][1])<accuracy) mascoord[curpos][1][1]=mascoord[curpos-1][1][1];
+					else mascoord[curpos][1][1]=coord[1][1];
+				}
+			}
+			else 
+			{
+				mascoord[curpos][0][0]=coord[0][0];
+				mascoord[curpos][0][1]=coord[0][1];
+				mascoord[curpos][1][0]=coord[1][0];
+				mascoord[curpos][1][1]=coord[1][1];
+			}
+			//calculate speed
+			if (curpos==0)
+			{
+				oldspeed[0][0]=0;
+				oldspeed[0][1]=0;
+				oldspeed[1][0]=0;
+				oldspeed[1][1]=0;
+			}
+			else
+			{
+				speed[0][0]=mascoord[curpos][0][0]-mascoord[0][0][0];
+				speed[0][1]=mascoord[curpos][0][1]-mascoord[0][0][1];
+				speed[1][0]=mascoord[curpos][1][0]-mascoord[0][1][0];
+				speed[1][1]=mascoord[curpos][1][1]-mascoord[0][1][1];
+			}
+			//check speed changing (y axis)
+			if (((speedch(speed[0][1],oldspeed[0][1])==1)||(speedch(speed[1][1],oldspeed[1][1])==1))&&(abs(coord[0][1]-coord[1][1])<calibrey))
+			{
+				temp=coord[1][0];
+				coord[1][0]=coord[0][0];
+				coord[0][0]=temp;
+				curpos=-1;
+			}
+			//check speed changing (x axis)
+			if (((speedch(speed[0][0],oldspeed[0][0])==1)||(speedch(speed[1][0],oldspeed[1][0])==1))&&(abs(coord[0][0]-coord[1][0])<calibrex))
+			{
+				temp=coord[1][1];
+				coord[1][1]=coord[0][1];
+				coord[0][1]=temp;
+				curpos=-1;
+			}
+			flag=0;
+			oldspeed[0][0]=speed[0][0];
+			oldspeed[0][1]=speed[0][1];
+			oldspeed[1][0]=speed[1][0];
+			oldspeed[1][1]=speed[1][1];
+		}//end of block
 	}
 
 	if ( pressed ) {
@@ -289,13 +390,13 @@ static void h353vl01_work_func(struct work_struct *work)
 
 	input_report_abs(h353_data->input, ABS_MT_TOUCH_MAJOR, pressed ? 128 : 0);
 	input_report_abs(h353_data->input, ABS_MT_WIDTH_MAJOR, 0);
-	input_report_abs(h353_data->input, ABS_MT_POSITION_X, (coord[0][0]*5)/3);
+	input_report_abs(h353_data->input, ABS_MT_POSITION_X, coord[0][0]);
 	input_report_abs(h353_data->input, ABS_MT_POSITION_Y, coord[0][1]);
 	input_mt_sync(h353_data->input);
 	if (finger2_pressed) {
 		input_report_abs(h353_data->input, ABS_MT_TOUCH_MAJOR, 128);
 		input_report_abs(h353_data->input, ABS_MT_WIDTH_MAJOR, 0);
-		input_report_abs(h353_data->input, ABS_MT_POSITION_X, (coord[1][0]*5)/3);
+		input_report_abs(h353_data->input, ABS_MT_POSITION_X, coord[1][0]);
 		input_report_abs(h353_data->input, ABS_MT_POSITION_Y, coord[1][1]);
 		input_mt_sync(h353_data->input);
 	} else if (finger2_was_pressed) {
