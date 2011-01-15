@@ -89,6 +89,14 @@ typedef const struct si_pub  si_t;
 #define WL_IW_USE_ISCAN  1
 #define ENABLE_ACTIVE_PASSIVE_SCAN_SUPPRESS  1
 
+#if defined(SOFTAP)
+#define WL_SOFTAP(x) printk x
+static struct net_device *priv_dev;
+static bool ap_cfg_running = FALSE;
+static bool ap_fw_loaded = FALSE;
+static int ap_mode = 0;
+#endif
+
 #define WL_IW_IOCTL_CALL(func_call) \
 	do {				\
 		func_call;		\
@@ -889,6 +897,11 @@ wl_iw_control_wl_off(
 	static struct wl_ctrl ctl;
 	static struct timer_list timer;
 
+	#ifdef SOFTAP
+	ap_mode = 0;
+	ap_cfg_running = FALSE;
+	#endif
+	
 	if(status_off==false) {
 		status_on = true;
 		status_off = true;
@@ -959,12 +972,335 @@ wl_iw_control_wl_on(
 	}
 
 	wl_iw_send_priv_event(dev, "START");
+	
+	/*#ifdef SOFTAP
+	if (!ap_fw_loaded) {
+		wl_iw_iscan_set_scan_broadcast_prep(dev, 0);
+	}
+#else
+	wl_iw_iscan_set_scan_broadcast_prep(dev, 0);
+#endif*/
 
 	WL_TRACE(("Exited %s \n", __FUNCTION__));
 	status_off = false;
 	return ret;
 }
 
+#ifdef SOFTAP
+static struct ap_profile my_ap;
+static int set_ap_cfg(struct net_device *dev, struct ap_profile *ap);
+static int get_assoc_sta_list(struct net_device *dev, char *buf, int len);
+static int set_ap_mac_list(struct net_device *dev, char *buf);
+
+#define PTYPE_STRING	0
+#define PTYPE_INTDEC	1
+#define PTYPE_INTHEX	2
+#define PTYPE_STR_HEX	3
+int get_parmeter_from_string(
+	char **str_ptr, const char *token, int param_type, void  *dst, int param_max_len);
+
+#endif
+
+int hex2num(char c)
+{
+	if (c >= '0' && c <= '9')
+		return c - '0';
+	if (c >= 'a' && c <= 'f')
+		return c - 'a' + 10;
+	if (c >= 'A' && c <= 'F')
+		return c - 'A' + 10;
+	return -1;
+}
+
+int hex2byte(const char *hex)
+{
+	int a, b;
+	a = hex2num(*hex++);
+	if (a < 0)
+		return -1;
+	b = hex2num(*hex++);
+	if (b < 0)
+		return -1;
+	return (a << 4) | b;
+}
+
+
+
+int hstr_2_buf(const char *txt, u8 *buf, int len)
+{
+	int i;
+
+	for (i = 0; i < len; i++) {
+		int a, b;
+
+		a = hex2num(*txt++);
+		if (a < 0)
+			return -1;
+		b = hex2num(*txt++);
+		if (b < 0)
+			return -1;
+		*buf++ = (a << 4) | b;
+	}
+
+	return 0;
+}
+
+#ifdef SOFTAP
+int init_ap_profile_from_string(char *param_str, struct ap_profile *ap_cfg)
+{
+	char *str_ptr = param_str;
+	char sub_cmd[16];
+	int ret = 0;
+
+	memset(sub_cmd, 0, sizeof(sub_cmd));
+	memset(ap_cfg, 0, sizeof(struct ap_profile));
+
+	if (get_parmeter_from_string(&str_ptr, "ASCII_CMD=",
+		PTYPE_STRING, sub_cmd, SSID_LEN) != 0) {
+		return -1;
+	}
+	if (strncmp(sub_cmd, "AP_CFG", 6)) {
+		WL_ERROR(("ERROR: sub_cmd:%s != 'AP_CFG'!\n", sub_cmd));
+		return -1;
+	}
+
+	ret = get_parmeter_from_string(&str_ptr, "SSID=", PTYPE_STRING, ap_cfg->ssid, SSID_LEN);
+
+	ret |= get_parmeter_from_string(&str_ptr, "SEC=", PTYPE_STRING,  ap_cfg->sec, SEC_LEN);
+
+	ret |= get_parmeter_from_string(&str_ptr, "KEY=", PTYPE_STRING,  ap_cfg->key, KEY_LEN);
+
+	ret |= get_parmeter_from_string(&str_ptr, "CHANNEL=", PTYPE_INTDEC, &ap_cfg->channel, 5);
+
+	ret |= get_parmeter_from_string(&str_ptr, "PREAMBLE=", PTYPE_INTDEC, &ap_cfg->preamble, 5);
+
+	ret |= get_parmeter_from_string(&str_ptr, "MAX_SCB=", PTYPE_INTDEC,  &ap_cfg->max_scb, 5);
+
+	return ret;
+}
+#endif
+
+
+#ifdef SOFTAP
+static int iwpriv_set_ap_config(struct net_device *dev,
+		struct iw_request_info *info,
+		union iwreq_data *wrqu,
+		char *ext)
+{
+	int res = 0;
+	char  *extra = NULL;
+	struct ap_profile *ap_cfg = &my_ap;
+
+	WL_TRACE(("> Got IWPRIV SET_AP IOCTL: info->cmd:%x, info->flags:%x, u.data:%p, u.len:%d\n",
+		info->cmd, info->flags,
+		wrqu->data.pointer, wrqu->data.length));
+
+	if (wrqu->data.length != 0) {
+
+		char *str_ptr;
+
+		if (!(extra = kmalloc(wrqu->data.length+1, GFP_KERNEL)))
+			return -ENOMEM;
+
+		if (copy_from_user(extra, wrqu->data.pointer, wrqu->data.length)) {
+			kfree(extra);
+			return -EFAULT;
+		}
+
+		extra[wrqu->data.length] = 0;
+		WL_SOFTAP((" Got str param in iw_point:\n %s\n", extra));
+
+		memset(ap_cfg, 0, sizeof(struct ap_profile));
+
+		str_ptr = extra;
+
+		init_ap_profile_from_string(extra, ap_cfg);
+
+	} else {
+		WL_ERROR(("IWPRIV argument len = 0 \n"));
+		return -1;
+	}
+
+
+	set_ap_cfg(dev, ap_cfg);
+	kfree(extra);
+
+	return res;
+}
+#endif
+
+
+#ifdef SOFTAP
+void print_buf(void *pbuf, int len, int bytes_per_line)
+{
+	int i, j = 0;
+	unsigned char *buf = pbuf;
+
+	if (bytes_per_line == 0) {
+		bytes_per_line = len;
+	}
+
+	for (i = 0; i < len; i++) {
+		WL_SOFTAP(("%2.2x", *buf++));
+		j++;
+		if (j == bytes_per_line) {
+			WL_SOFTAP(("\n"));
+			j = 0;
+		} else {
+			WL_SOFTAP((":"));
+		}
+	}
+	WL_SOFTAP(("\n"));
+}
+
+static int iwpriv_get_assoc_list(struct net_device *dev,
+		struct iw_request_info *info,
+		union iwreq_data *p_iwrq,
+		char *extra)
+{
+	int i, ret = 0;
+	char mac_buf[256];
+	struct maclist *sta_maclist = (struct maclist *)mac_buf;
+
+	char mac_lst[256];
+	char *p_mac_str;
+
+	WL_TRACE(("\n %s: IWPRIV IOCTL: cmd:%hx, flags:%hx, extra:%p, iwp.len:%d, \
+		iwp.len:%p, iwp.flags:%x  \n", __FUNCTION__, info->cmd, info->flags, \
+		extra, p_iwrq->data.length, p_iwrq->data.pointer, p_iwrq->data.flags));
+
+	WL_SOFTAP(("extra:%s\n", extra));
+	print_buf((u8 *)p_iwrq, 16, 0);
+
+	memset(sta_maclist, 0, sizeof(mac_buf));
+
+	sta_maclist->count = 8;
+
+	WL_TRACE((" net device:%s, buf_sz:%d\n", dev->name, sizeof(mac_buf)));
+	get_assoc_sta_list(dev, mac_buf, 256);
+	WL_TRACE((" got %d stations\n", sta_maclist->count));
+
+	memset(mac_lst, 0, sizeof(mac_lst));
+	p_mac_str = mac_lst;
+
+	for (i = 0; i < 8; i++) {
+		struct ether_addr *id = &sta_maclist->ea[i];
+
+		WL_SOFTAP(("dhd_drv>> sta_mac[%d] :", i));
+		print_buf((unsigned char *)&sta_maclist->ea[i], 6, 0);
+
+		p_mac_str += snprintf(p_mac_str, MAX_WX_STRING,
+			"Mac[%d]=%02X:%02X:%02X:%02X:%02X:%02X\n", i,
+			id->octet[0], id->octet[1], id->octet[2],
+			id->octet[3], id->octet[4], id->octet[5]);
+
+	}
+
+	p_iwrq->data.length = strlen(mac_lst);
+
+	WL_TRACE(("u.pointer:%p\n", p_iwrq->data.pointer));
+	WL_TRACE(("resulting str:\n%s \n len:%d\n\n", mac_lst, p_iwrq->data.length));
+
+	if (p_iwrq->data.length) {
+		if (copy_to_user(p_iwrq->data.pointer, mac_lst, p_iwrq->data.length)) {
+			WL_ERROR(("%s: Can't copy to user\n", __FUNCTION__));
+			return -EFAULT;
+		}
+	}
+
+	WL_TRACE(("Exited %s \n", __FUNCTION__));
+	return ret;
+}
+#endif
+
+
+#ifdef SOFTAP
+static int iwpriv_set_mac_filters(struct net_device *dev,
+		struct iw_request_info *info,
+		union iwreq_data *wrqu,
+		char *ext)
+{
+
+	int i, ret = -1;
+	char *extra = NULL;
+	u8  macfilt[8][6];
+	int mac_cnt = 0;
+	char sub_cmd[16];
+
+	WL_TRACE((">>> Got IWPRIV SET_MAC_FILTER IOCTL:  info->cmd:%x, \
+			info->flags:%x, u.data:%p, u.len:%d\n",
+			info->cmd, info->flags,
+			wrqu->data.pointer, wrqu->data.length));
+
+	if (wrqu->data.length != 0) {
+
+		char *str_ptr;
+
+		if (!(extra = kmalloc(wrqu->data.length+1, GFP_KERNEL)))
+			return -ENOMEM;
+
+		if (copy_from_user(extra, wrqu->data.pointer, wrqu->data.length)) {
+			kfree(extra);
+			return -EFAULT;
+		}
+
+		extra[wrqu->data.length] = 0;
+		WL_SOFTAP((" Got parameter string in iw_point:\n %s \n", extra));
+
+		memset(macfilt, 0, sizeof(macfilt));
+		memset(sub_cmd, 0, sizeof(sub_cmd));
+
+		str_ptr = extra;
+
+		if (get_parmeter_from_string(&str_ptr, "ASCII_CMD=", PTYPE_STRING, sub_cmd, 15) != 0) {
+			goto exit_proc;
+		}
+
+#define MAC_FILT_MAX 8
+
+		if (strncmp(sub_cmd, "MAC_FLT_W", strlen("MAC_FLT_W"))) {
+			WL_ERROR(("ERROR: sub_cmd:%s != 'MAC_FLT_W'!\n", sub_cmd));
+			goto exit_proc;
+		}
+
+		if (get_parmeter_from_string(&str_ptr, "MAC_CNT=",
+			PTYPE_INTDEC, &mac_cnt, 4) != 0) {
+			WL_ERROR(("ERROR: MAC_CNT param is missing \n"));
+			goto exit_proc;
+		}
+
+		if (mac_cnt > MAC_FILT_MAX) {
+			WL_ERROR(("ERROR: number of MAC filters > MAX\n"));
+			goto exit_proc;
+		}
+
+		for (i = 0; i < mac_cnt; i++) {
+			if (get_parmeter_from_string(&str_ptr, "MAC=",
+				PTYPE_STR_HEX, macfilt[i], 12) != 0) {
+				WL_ERROR(("ERROR: MAC_filter[%d] is missing !\n", i));
+				goto exit_proc;
+			}
+		}
+
+		for (i = 0; i < mac_cnt; i++) {
+			WL_SOFTAP(("mac_filt[%d]:", i));
+			print_buf(macfilt[i], 6, 0);
+		}
+
+		wrqu->data.pointer = NULL;
+		wrqu->data.length = 0;
+		ret = 0;
+
+	} else {
+		WL_ERROR(("IWPRIV argument len is 0\n"));
+		return -1;
+	}
+
+	exit_proc:
+	kfree(extra);
+	return ret;
+}
+#endif
 
 #endif 
 
@@ -1038,6 +1374,12 @@ wl_iw_set_freq(
 
 	WL_TRACE(("%s: SIOCSIWFREQ\n", dev->name));
 
+	#if defined(SOFTAP)
+	if (ap_cfg_running) {
+		WL_TRACE(("%s:>> not executed, 'SOFT_AP is active' \n", __FUNCTION__));
+		return 0;
+	}
+#endif
 	
 	if (fwrq->e == 0 && fwrq->m < MAXCHANNEL) {
 		chan = fwrq->m;
@@ -1766,6 +2108,12 @@ _iscan_sysioc_thread(void *data)
 
 	status = WL_SCAN_RESULTS_PARTIAL;
 	while (down_interruptible(&iscan->sysioc_sem) == 0) {
+	#ifdef SOFTAP
+		if (ap_cfg_running) {
+			WL_TRACE(("%s skipping SCAN ops in AP mode !!!\n", __FUNCTION__));
+			continue;
+		}
+#endif
 		if (iscan->timer_on) {
 			del_timer(&iscan->timer);
 			iscan->timer_on = 0;
@@ -2084,6 +2432,12 @@ wl_iw_set_scan(
 
 	WL_TRACE(("%s: SIOCSIWSCAN\n", dev->name));
 
+	#if defined(SOFTAP)
+	if (ap_cfg_running) {
+		WL_TRACE(("\n>%s: Not executed, reason -'SOFTAP is active'\n", __FUNCTION__));
+		return 0;
+	}
+#endif
 	
 	if (g_onoff == G_WLAN_SET_OFF)
 		return 0;
@@ -2125,6 +2479,12 @@ wl_iw_iscan_set_scan(
 
 	WL_TRACE(("%s: SIOCSIWSCAN\n", dev->name));
 
+	#if defined(SOFTAP)
+	if (ap_cfg_running) {
+		WL_TRACE(("\n>%s: Not executed, reason -'SOFTAP is active'\n", __FUNCTION__));
+		return 0;
+	}
+#endif
 	
 	if (g_onoff == G_WLAN_SET_OFF)
 		return 0;
@@ -2579,6 +2939,13 @@ wl_iw_iscan_get_scan(
 	uint buflen_from_user = dwrq->length;
 
 	WL_TRACE(("%s %s buflen_from_user %d:\n", dev->name, __FUNCTION__, dwrq->length));
+
+	#if defined(SOFTAP)
+	if (ap_cfg_running) {
+		WL_TRACE(("%s: Not executed, reason -'SOFTAP is active'\n", __FUNCTION__));
+		return -EINVAL;
+	}
+#endif
 
 	if (!extra) {
 		WL_TRACE(("%s: SIOCGIWSCAN GET bad parameter\n", dev->name));
@@ -3542,6 +3909,13 @@ wl_iw_set_wpaauth(
 
 	WL_TRACE(("%s: SIOCSIWAUTH\n", dev->name));
 
+	#if defined(SOFTAP)
+	if (ap_cfg_running) {
+		WL_TRACE(("%s: Not executed, reason -'SOFTAP is active'\n", __FUNCTION__));
+		return 0;
+	}
+#endif
+	
 	paramid = vwrq->flags & IW_AUTH_INDEX;
 	paramval = vwrq->value;
 
@@ -3813,6 +4187,899 @@ wl_iw_get_wpaauth(
 }
 #endif 
 
+#ifdef SOFTAP
+
+static int ap_macmode = MACLIST_MODE_DISABLED;
+static struct mflist ap_black_list;
+static int
+wl_iw_parse_wep(char *keystr, wl_wsec_key_t *key)
+{
+	char hex[] = "XX";
+	unsigned char *data = key->data;
+
+	switch (strlen(keystr)) {
+	case 5:
+	case 13:
+	case 16:
+		key->len = strlen(keystr);
+		memcpy(data, keystr, key->len + 1);
+		break;
+	case 12:
+	case 28:
+	case 34:
+	case 66:
+		if (!strnicmp(keystr, "0x", 2))
+			keystr += 2;
+		else
+			return -1;
+	case 10:
+	case 26:
+	case 32:
+	case 64:
+		key->len = strlen(keystr) / 2;
+		while (*keystr) {
+			strncpy(hex, keystr, 2);
+			*data++ = (char) bcm_strtoul(hex, NULL, 16);
+			keystr += 2;
+		}
+		break;
+	default:
+		return -1;
+	}
+
+	switch (key->len) {
+	case 5:
+		key->algo = CRYPTO_ALGO_WEP1;
+		break;
+	case 13:
+		key->algo = CRYPTO_ALGO_WEP128;
+		break;
+	case 16:
+		key->algo = CRYPTO_ALGO_AES_CCM;
+		break;
+	case 32:
+		key->algo = CRYPTO_ALGO_TKIP;
+		break;
+	default:
+		return -1;
+	}
+
+	key->flags |= WL_PRIMARY_KEY;
+
+	return 0;
+}
+
+#ifdef EXT_WPA_CRYPTO
+#define SHA1HashSize 20
+extern void pbkdf2_sha1(const char *passphrase, const char *ssid, size_t ssid_len,
+				int iterations, u8 *buf, size_t buflen);
+
+#else
+
+#define SHA1HashSize 20
+int pbkdf2_sha1(const char *passphrase, const char *ssid, size_t ssid_len,
+				int iterations, u8 *buf, size_t buflen)
+{
+	WL_ERROR(("WARNING: %s is not implemented !!!\n", __FUNCTION__));
+	return -1;
+}
+
+#endif 
+
+int dev_iw_write_cfg1_bss_var(struct net_device *dev, int val)
+{
+	struct {
+		int cfg;
+		int val;
+	} bss_setbuf;
+
+	int bss_set_res;
+	char smbuf[WLC_IOCTL_SMLEN];
+	memset(smbuf, 0, sizeof(smbuf));
+
+	bss_setbuf.cfg = 1;
+	bss_setbuf.val = val;
+
+	bss_set_res = dev_iw_iovar_setbuf(dev, "bss",
+		&bss_setbuf, sizeof(bss_setbuf), smbuf, sizeof(smbuf));
+	WL_TRACE(("\n:%s: bss_set_result:%d\n", __FUNCTION__, bss_set_res));
+
+	return bss_set_res;
+}
+
+static int wl_bssiovar_mkbuf(
+			const char *iovar,
+			int bssidx,
+			void *param,
+			int paramlen,
+			void *bufptr,
+			int buflen,
+			int *perr)
+{
+	const char *prefix = "bsscfg:";
+	int8 *p;
+	uint prefixlen;
+	uint namelen;
+	uint iolen;
+
+	prefixlen = strlen(prefix);
+	namelen = strlen(iovar) + 1;
+	iolen = prefixlen + namelen + sizeof(int) + paramlen;
+
+	if (buflen < 0 || iolen > (uint)buflen) {
+		*perr = BCME_BUFTOOSHORT;
+		return 0;
+	}
+
+	p = (int8 *)bufptr;
+
+	memcpy(p, prefix, prefixlen);
+	p += prefixlen;
+
+	memcpy(p, iovar, namelen);
+	p += namelen;
+
+	bssidx = htod32(bssidx);
+	memcpy(p, &bssidx, sizeof(int32));
+	p += sizeof(int32);
+
+	if (paramlen)
+		memcpy(p, param, paramlen);
+
+	*perr = 0;
+	return iolen;
+}
+
+
+int get_user_params(char *user_params, struct iw_point *dwrq)
+{
+	int ret = 0;
+
+	if (copy_from_user(user_params, dwrq->pointer, dwrq->length)) {
+		WL_ERROR(("\n%s: no user params: uptr:%p, ulen:%d\n",
+			__FUNCTION__, dwrq->pointer, dwrq->length));
+		return -EFAULT;
+	}
+
+	WL_TRACE(("\n%s: iwpriv user params:%s\n", __FUNCTION__, user_params));
+
+	return ret;
+}
+
+
+#ifdef SOFTAP
+
+struct net_device *ap_net_dev = NULL;
+struct semaphore  ap_eth_sema;
+static int wl_iw_set_ap_security(struct net_device *dev, struct ap_profile *ap);
+
+
+static int thr_wait_for_2nd_eth_dev(void *data)
+{
+
+	DAEMONIZE("wl0_eth_wthread");
+
+	WL_TRACE(("\n>%s threda started:, PID:%x\n", __FUNCTION__, current->pid));
+
+	if (down_timeout(&ap_eth_sema,  msecs_to_jiffies(5000)) != 0) {
+		WL_ERROR(("\n%s: sap_eth_sema timeout \n", __FUNCTION__));
+		return -1;
+	}
+
+	if (!ap_net_dev) {
+		WL_ERROR((" ap_net_dev is null !!!"));
+		return -1;
+	}
+
+	WL_TRACE(("\n>%s: Thread:'softap ethdev IF:%s is detected !!!'\n\n",
+		__FUNCTION__, ap_net_dev->name));
+
+	ap_mode = 1;
+	ap_cfg_running = TRUE;
+
+	bcm_mdelay(500);
+
+	wl_iw_send_priv_event(priv_dev, "ASCII_CMD=AP_BSS_START");
+
+	WL_TRACE(("\n>%s, thread completed\n", __FUNCTION__));
+
+	return 0;
+}
+
+
+static int set_ap_cfg(struct net_device *dev, struct ap_profile *ap)
+{
+	int updown = 0;
+	int channel = 0;
+
+	wlc_ssid_t ap_ssid;
+	wlc_ssid_t null_ssid;
+	int max_assoc = 8;
+	int mpc = 0;
+
+	int res = 0;
+	int apsta_var = 0;
+	int iolen = 0;
+	int mkvar_err = 0;
+	int bsscfg_index = 1;
+	char buf[WLC_IOCTL_SMLEN];
+
+	ap_mode = 0;
+
+	memset(&null_ssid, 0, sizeof(wlc_ssid_t));
+	WL_SOFTAP(("wl_iw: set ap profile:\n"));
+	WL_SOFTAP(("	ssid = '%s'\n", ap->ssid));
+	WL_SOFTAP(("	security = '%s'\n", ap->sec));
+	if (ap->key[0] != '\0')
+		WL_SOFTAP(("	key = '%s'\n", ap->key));
+	WL_SOFTAP(("	channel = %d\n", ap->channel));
+	WL_SOFTAP(("	max scb = %d\n", ap->max_scb));
+
+	if (!ap_cfg_running) {
+
+		sema_init(&ap_eth_sema, 0);
+
+		mpc = 0;
+		res |= dev_wlc_intvar_set(dev, "mpc", mpc);
+
+		updown = 0;
+		res |= dev_wlc_ioctl(dev, WLC_DOWN, &updown, sizeof(updown));
+
+#ifdef AP_ONLY
+		apsta_var = 0;
+		res | = dev_wlc_ioctl(dev, WLC_SET_AP, &apsta_var, sizeof(apsta_var));
+
+		apsta_var = 1;
+		res |= dev_wlc_ioctl(dev, WLC_SET_AP, &apsta_var, sizeof(apsta_var));
+		res |= dev_wlc_ioctl(dev, WLC_GET_AP, &apsta_var, sizeof(apsta_var));
+#else
+		apsta_var = 1;
+		iolen = wl_bssiovar_mkbuf("apsta", bsscfg_index, &apsta_var,
+				sizeof(apsta_var)+4, buf, sizeof(buf), &mkvar_err);
+		ASSERT(iolen);
+		res |= dev_wlc_ioctl(dev, WLC_SET_VAR, buf, iolen);
+		WL_TRACE(("\n>in %s: apsta set result: %d \n", __FUNCTION__, res));
+#endif
+
+		updown = 1;
+		res |= dev_wlc_ioctl(dev, WLC_UP, &updown, sizeof(updown));
+		WL_TRACE(("\n:%s >>>> dev_wlc_ioctl(WLC_UP) updown:%d, \n", __FUNCTION__, updown));
+
+	} else {
+
+		res |= dev_iw_write_cfg1_bss_var(dev, 0);
+	}
+
+	if (ap->channel == 0) {
+		int chosen = 0;
+		wl_uint32_list_t request;
+		int rescan = 0;
+		int retry = 0;
+		int ret = 0;
+
+		res |= dev_wlc_ioctl(dev, WLC_UP, &updown, sizeof(updown));
+		res |= dev_wlc_ioctl(dev, WLC_SET_SSID, &null_ssid, sizeof(null_ssid));
+
+auto_channel_retry:
+		request.count = htod32(0);
+		ret = dev_wlc_ioctl(dev, WLC_START_CHANNEL_SEL, &request, sizeof(request));
+		if (ret < 0) {
+			WL_ERROR(("can't start auto channel scan\n"));
+			return -1;
+		}
+
+get_channel_retry:
+		bcm_mdelay(500);
+
+		ret = dev_wlc_ioctl(dev, WLC_GET_CHANNEL_SEL, &chosen, sizeof(chosen));
+		if (ret < 0 || dtoh32(chosen) == 0) {
+			if (retry++ < 3)
+				goto get_channel_retry;
+			else {
+				WL_ERROR(("can't get auto channel sel, err = %d, \
+					chosen = %d\n", ret, chosen));
+				return -1;
+			}
+		}
+		if ((chosen == 1) && (!rescan++))
+			goto auto_channel_retry;
+		WL_SOFTAP(("Set auto channel = %d\n", chosen));
+		ap->channel = chosen;
+		dev_wlc_ioctl(dev, WLC_DOWN, &updown, sizeof(updown));
+	}
+
+	channel = ap->channel;
+	res |= dev_wlc_ioctl(dev, WLC_SET_CHANNEL, &channel, sizeof(channel));
+
+	if (!ap_cfg_running) {
+		updown = 0;
+		res |= dev_wlc_ioctl(dev, WLC_UP, &updown, sizeof(updown));
+	}
+
+	max_assoc = ap->max_scb;
+	res |= dev_wlc_intvar_set(dev, "maxassoc", max_assoc);
+
+	ap_ssid.SSID_len = strlen(ap->ssid);
+	strncpy(ap_ssid.SSID, ap->ssid, ap_ssid.SSID_len);
+
+	iolen = wl_bssiovar_mkbuf("ssid", bsscfg_index, (char *)(&ap_ssid),
+		ap_ssid.SSID_len+4, buf, sizeof(buf), &mkvar_err);
+	ASSERT(iolen);
+	res |= dev_wlc_ioctl(dev, WLC_SET_VAR, buf, iolen);
+
+	if (res != 0) {
+		WL_ERROR(("ERROR:%d in:%s, Security & BSS reconfiguration is skipped\n",
+			res, __FUNCTION__));
+		return res;
+	}
+
+	if (!ap_cfg_running) {
+		kernel_thread(thr_wait_for_2nd_eth_dev, 0, 0);
+	} else {
+		if (ap_net_dev == NULL) {
+			WL_ERROR(("%s: ERROR: ap_net_dev is NULL !!!\n",__FUNCTION__));
+			return -1;
+		}
+
+		/* if  the AP interface wl0.1 already exists we call security & bss UP in here */
+		WL_ERROR(("%s: %s Configure security & restart AP bss\n", __FUNCTION__, ap_net_dev->name));
+
+		res |= wl_iw_set_ap_security(ap_net_dev, &my_ap);
+		res |= dev_iw_write_cfg1_bss_var(dev, 1);
+	}
+	return res;
+}
+
+
+static int wl_iw_set_ap_security(struct net_device *dev, struct ap_profile *ap)
+{
+	int wsec = 0;
+	int wpa_auth = 0;
+	int res = 0;
+	int i;
+	char *ptr;
+
+	WL_SOFTAP(("\nsetting SOFTAP security mode:\n"));
+	WL_SOFTAP(("wl_iw: set ap profile:\n"));
+	WL_SOFTAP(("	ssid = '%s'\n", ap->ssid));
+	WL_SOFTAP(("	security = '%s'\n", ap->sec));
+	if (ap->key[0] != '\0')
+		WL_SOFTAP(("	key = '%s'\n", ap->key));
+	WL_SOFTAP(("	channel = %d\n", ap->channel));
+	WL_SOFTAP(("	max scb = %d\n", ap->max_scb));
+
+	if (strnicmp(ap->sec, "open", strlen("open")) == 0) {
+		wsec = 0;
+		res = dev_wlc_intvar_set(dev, "wsec", wsec);
+		wpa_auth = WPA_AUTH_DISABLED;
+		res |= dev_wlc_intvar_set(dev, "wpa_auth", wpa_auth);
+
+		WL_SOFTAP(("=====================\n"));
+		WL_SOFTAP((" wsec & wpa_auth set 'OPEN', result:&d %d\n", res));
+		WL_SOFTAP(("=====================\n"));
+
+	} else if (strnicmp(ap->sec, "wep", strlen("wep")) == 0) {
+
+		wl_wsec_key_t key;
+		memset(&key, 0, sizeof(key));
+
+		wsec = WEP_ENABLED;
+		res = dev_wlc_intvar_set(dev, "wsec", wsec);
+
+		key.index = 0;
+		if (wl_iw_parse_wep(ap->key, &key)) {
+			WL_SOFTAP(("wep key parse err!\n"));
+			return -1;
+		}
+
+		key.index = htod32(key.index);
+		key.len = htod32(key.len);
+		key.algo = htod32(key.algo);
+		key.flags = htod32(key.flags);
+
+		res |= dev_wlc_ioctl(dev, WLC_SET_KEY, &key, sizeof(key));
+
+		wpa_auth = WPA_AUTH_DISABLED;
+		res |= dev_wlc_intvar_set(dev, "wpa_auth", wpa_auth);
+
+		WL_SOFTAP(("=====================\n"));
+		WL_SOFTAP((" wsec & auth set 'WEP', result:&d %d\n", res));
+		WL_SOFTAP(("=====================\n"));
+
+	} else if (strnicmp(ap->sec, "wpa2-psk", strlen("wpa2-psk")) == 0) {
+		wsec_pmk_t psk;
+		size_t key_len;
+
+		wsec = AES_ENABLED;
+		dev_wlc_intvar_set(dev, "wsec", wsec);
+
+		key_len = strlen(ap->key);
+		if (key_len < WSEC_MIN_PSK_LEN || key_len > WSEC_MAX_PSK_LEN) {
+			WL_SOFTAP(("passphrase must be between %d and %d characters long\n",
+			WSEC_MIN_PSK_LEN, WSEC_MAX_PSK_LEN));
+			return -1;
+		}
+
+		if (key_len < WSEC_MAX_PSK_LEN) {
+			unsigned char output[2*SHA1HashSize];
+			char key_str_buf[WSEC_MAX_PSK_LEN+1];
+
+			memset(output, 0, sizeof(output));
+			pbkdf2_sha1(ap->key, ap->ssid, strlen(ap->ssid), 4096, output, 32);
+
+			ptr = key_str_buf;
+			for (i = 0; i < (WSEC_MAX_PSK_LEN/8); i++) {
+				sprintf(ptr, "%02x%02x%02x%02x", (uint)output[i*4], \
+					 (uint)output[i*4+1], (uint)output[i*4+2], \
+					 (uint)output[i*4+3]);
+				ptr += 8;
+			}
+			WL_SOFTAP(("%s: passphase = %s\n", __FUNCTION__, key_str_buf));
+
+			psk.key_len = htod16((ushort)WSEC_MAX_PSK_LEN);
+			memcpy(psk.key, key_str_buf, psk.key_len);
+		} else {
+			psk.key_len = htod16((ushort) key_len);
+			memcpy(psk.key, ap->key, key_len);
+		}
+		psk.flags = htod16(WSEC_PASSPHRASE);
+		dev_wlc_ioctl(dev, WLC_SET_WSEC_PMK, &psk, sizeof(psk));
+
+		wpa_auth = WPA2_AUTH_PSK;
+		dev_wlc_intvar_set(dev, "wpa_auth", wpa_auth);
+
+	} else if (strnicmp(ap->sec, "wpa-psk", strlen("wpa-psk")) == 0) {
+
+		wsec_pmk_t psk;
+		size_t key_len;
+
+		wsec = TKIP_ENABLED;
+		res = dev_wlc_intvar_set(dev, "wsec", wsec);
+
+		key_len = strlen(ap->key);
+		if (key_len < WSEC_MIN_PSK_LEN || key_len > WSEC_MAX_PSK_LEN) {
+			WL_SOFTAP(("passphrase must be between %d and %d characters long\n",
+			WSEC_MIN_PSK_LEN, WSEC_MAX_PSK_LEN));
+			return -1;
+		}
+
+		if (key_len < WSEC_MAX_PSK_LEN) {
+			unsigned char output[2*SHA1HashSize];
+			char key_str_buf[WSEC_MAX_PSK_LEN+1];
+
+			WL_SOFTAP(("%s: do passhash...\n", __FUNCTION__));
+
+			pbkdf2_sha1(ap->key, ap->ssid, strlen(ap->ssid), 4096, output, 32);
+
+			ptr = key_str_buf;
+			for (i = 0; i < (WSEC_MAX_PSK_LEN/8); i++) {
+				WL_SOFTAP(("[%02d]: %08x\n", i, *((unsigned int *)&output[i*4])));
+
+				sprintf(ptr, "%02x%02x%02x%02x", (uint)output[i*4],
+					(uint)output[i*4+1], (uint)output[i*4+2],
+					(uint)output[i*4+3]);
+				ptr += 8;
+			}
+			WL_SOFTAP(("%s: passphase = %s\n", __FUNCTION__, key_str_buf));
+
+			psk.key_len = htod16((ushort)WSEC_MAX_PSK_LEN);
+			memcpy(psk.key, key_str_buf, psk.key_len);
+		} else {
+			psk.key_len = htod16((ushort) key_len);
+			memcpy(psk.key, ap->key, key_len);
+		}
+
+		psk.flags = htod16(WSEC_PASSPHRASE);
+		res |= dev_wlc_ioctl(dev, WLC_SET_WSEC_PMK, &psk, sizeof(psk));
+
+		wpa_auth = WPA_AUTH_PSK;
+		res |= dev_wlc_intvar_set(dev, "wpa_auth", wpa_auth);
+
+		WL_SOFTAP((" wsec & auth set 'wpa-psk' (TKIP), result:&d %d\n", res));
+	}
+
+	return res;
+}
+
+
+
+int get_parmeter_from_string(
+			char **str_ptr, const char *token,
+			int param_type, void  *dst, int param_max_len)
+{
+	char int_str[7] = "0";
+	int parm_str_len;
+	char  *param_str_begin;
+	char  *param_str_end;
+	//char  *orig_str = *str_ptr;
+
+	if (!strncmp(*str_ptr, token, strlen(token))) {
+
+		strsep(str_ptr, "=,");
+		param_str_begin = *str_ptr;
+		strsep(str_ptr, "=,");
+
+		if (*str_ptr == NULL) {
+			parm_str_len = strlen(param_str_begin);
+		} else {
+			param_str_end = *str_ptr-1;
+			parm_str_len = param_str_end - param_str_begin;
+		}
+
+		WL_TRACE((" 'token:%s', len:%d, ", token, parm_str_len));
+
+		if (parm_str_len > param_max_len) {
+			WL_TRACE((" WARNING: extracted param len:%d is > MAX:%d\n",
+				parm_str_len, param_max_len));
+
+			parm_str_len = param_max_len;
+		}
+
+		switch (param_type) {
+
+		case PTYPE_INTDEC: {
+			int *pdst_int = dst;
+			char *eptr;
+
+			if (parm_str_len > sizeof(int_str))
+				 parm_str_len = sizeof(int_str);
+
+			memcpy(int_str, param_str_begin, parm_str_len);
+
+			*pdst_int = simple_strtoul(int_str, &eptr, 10);
+
+			WL_TRACE((" written as integer:%d\n",  *pdst_int));
+			}
+			break;
+		case PTYPE_STR_HEX: {
+			u8 *buf = dst;
+
+			param_max_len = param_max_len >> 1;
+			hstr_2_buf(param_str_begin, buf, param_max_len);
+			print_buf(buf, param_max_len, 0);
+			}
+			break;
+		default:
+			memcpy(dst, param_str_begin, parm_str_len);
+			*((char *)dst + parm_str_len) = 0;
+			WL_TRACE((" written as a string:%s\n", (char *)dst));
+			break;
+		}
+
+		return 0;
+	} else {
+	//	WL_ERROR(("\n %s: ERROR: can't find token:%s in str:%s \n",
+	//		__FUNCTION__, token, orig_str));
+
+		return -1;
+	}
+}
+
+
+static int wl_iw_softap_deassoc_stations(struct net_device *dev)
+{
+	int i;
+	int res = 0;
+	char mac_buf[128] = {0};
+	struct maclist *assoc_maclist = (struct maclist *)mac_buf;
+
+	memset(assoc_maclist, 0, sizeof(mac_buf));
+	assoc_maclist->count = 8;
+
+	res = dev_wlc_ioctl(dev, WLC_GET_ASSOCLIST, assoc_maclist, 128);
+	if (res != 0) {
+		WL_SOFTAP((" Error:%d in :%s, Couldn't get ASSOC List\n", res, __FUNCTION__));
+		return res;
+	}
+
+	if (assoc_maclist->count) {
+		for (i = 0; i < assoc_maclist->count; i++) {
+			scb_val_t scbval;
+
+			scbval.val = htod32(1);
+			bcopy(&assoc_maclist->ea[i], &scbval.ea, ETHER_ADDR_LEN);
+
+			WL_SOFTAP(("deauth STA:%d \n", i));
+			res |= dev_wlc_ioctl(dev, WLC_SCB_DEAUTHENTICATE_FOR_REASON,
+					&scbval, sizeof(scb_val_t));
+		}
+	} else {
+		WL_SOFTAP((" STA ASSOC list is empty\n"));
+	}
+
+	if (res != 0)
+		WL_SOFTAP((" Error:%d in :%s\n", res, __FUNCTION__));
+	return res;
+}
+
+
+static int iwpriv_softap_stop(struct net_device *dev,
+	struct iw_request_info *info,
+	union iwreq_data *wrqu,
+	char *ext)
+{
+	int res = 0;
+	char buf[128];
+
+	WL_SOFTAP(("got iwpriv AP_BSS_STOP\n"));
+
+	if ((!dev) && (!ap_net_dev)) {
+		WL_ERROR(("%s: dev is null\n", __FUNCTION__));
+		return res;
+	}
+
+	/* Make sure that interface is UP */
+	strcpy(buf, "cur_etheraddr");
+	dev_wlc_ioctl(dev, WLC_GET_VAR, buf, sizeof(buf));
+
+	res = wl_iw_softap_deassoc_stations(ap_net_dev);
+
+	bcm_mdelay(200);
+	res |= dev_iw_write_cfg1_bss_var(dev, 2);
+
+	wrqu->data.length = 0;
+	ap_mode = 0;
+	ap_cfg_running = FALSE;
+
+	return res;
+}
+
+
+static int iwpriv_fw_reload(struct net_device *dev,
+		struct iw_request_info *info,
+		union iwreq_data *wrqu,
+		char *ext)
+{
+	int ret = -1;
+	char extra[256];
+	char *fwstr = fw_path;
+
+	WL_SOFTAP(("current firmware_path[]=%s\n", fwstr));
+
+	WL_TRACE((">Got FW_RELOAD cmd:"
+				"info->cmd:%x, info->flags:%x, u.data:%p, u.len:%d, \
+				fw_path:%p, len:%d \n",
+				info->cmd, info->flags,
+				wrqu->data.pointer, wrqu->data.length, fwstr, strlen(fwstr)));
+
+
+	if ((wrqu->data.length > 4) && (wrqu->data.length < sizeof(extra))) {
+
+		char *str_ptr;
+
+		if (copy_from_user(extra, wrqu->data.pointer, wrqu->data.length)) {
+			ret = -EFAULT;
+			goto exit_proc;
+		}
+
+		extra[wrqu->data.length] = 8;
+		str_ptr = extra;
+
+		if (get_parmeter_from_string(&str_ptr, "FW_PATH=", PTYPE_STRING, fwstr, 255) != 0) {
+			WL_ERROR(("Error: extracting FW_PATH='' string\n"));
+			goto exit_proc;
+		}
+
+		if (strstr(fwstr, "apsta") != NULL) {
+			WL_SOFTAP(("GOT APSTA FIRMWARE\n"));
+			ap_fw_loaded = TRUE;
+		} else {
+			WL_SOFTAP(("GOT STA FIRMWARE\n"));
+			ap_fw_loaded = FALSE;
+		}
+
+		WL_SOFTAP(("SET firmware_path[]=%s , str_p:%p\n", fwstr, fwstr));
+		ret = 0;
+	} else {
+		WL_ERROR(("Error: ivalid param len:%d\n", wrqu->data.length));
+	}
+
+exit_proc:
+	return ret;
+}
+#endif
+
+#ifdef SOFTAP
+static int iwpriv_wpasupp_loop_tst(struct net_device *dev,
+		struct iw_request_info *info,
+		union iwreq_data *wrqu,
+		char *ext)
+{
+	int res = 0;
+	char  *params = NULL;
+
+	WL_TRACE((">Got IWPRIV  wp_supp loopback cmd test:"
+				"info->cmd:%x, info->flags:%x, u.data:%p, u.len:%d\n",
+				info->cmd, info->flags,
+				wrqu->data.pointer, wrqu->data.length));
+
+	if (wrqu->data.length != 0) {
+
+		if (!(params = kmalloc(wrqu->data.length+1, GFP_KERNEL)))
+			return -ENOMEM;
+
+		if (copy_from_user(params, wrqu->data.pointer, wrqu->data.length)) {
+			kfree(params);
+			return -EFAULT;
+		}
+
+		params[wrqu->data.length] = 0;
+		WL_SOFTAP(("\n>> copied from user:\n %s\n", params));
+	} else {
+		WL_ERROR(("ERROR param length is 0\n"));
+		return -EFAULT;
+	}
+
+	res = wl_iw_send_priv_event(dev, params);
+	kfree(params);
+
+	return res;
+}
+#endif
+
+
+static int
+iwpriv_en_ap_bss(
+		struct net_device *dev,
+		struct iw_request_info *info,
+		void *wrqu,
+		char *extra)
+{
+	int res = 0;
+	WL_TRACE(("%s: rcvd IWPRIV IOCTL:  for dev:%s\n", __FUNCTION__, dev->name));
+
+	if (wl_iw_set_ap_security(dev, &my_ap) != 0) {
+		WL_ERROR(("!!!!:ERROR setting SOFTAP security in :%s\n", __FUNCTION__));
+	};
+
+	dev_iw_write_cfg1_bss_var(dev, 1);
+	return res;
+}
+
+static int
+get_assoc_sta_list(struct net_device *dev, char *buf, int len)
+{
+	WL_TRACE(("calling dev_wlc_ioctl(dev:%p, cmd:%d, buf:%p, len:%d)\n",
+		dev, WLC_GET_ASSOCLIST, buf, len));
+
+	dev_wlc_ioctl(dev, WLC_GET_ASSOCLIST, buf, len);
+
+	return 0;
+}
+
+
+static int
+set_ap_mac_list(struct net_device *dev, char *buf)
+{
+	struct mac_list_set *mac_list_set = (struct mac_list_set *)buf;
+	struct maclist *white_maclist = (struct maclist *)&mac_list_set->white_list;
+	struct maclist *black_maclist = (struct maclist *)&mac_list_set->black_list;
+	int mac_mode = mac_list_set->mode;
+	int length;
+	int i;
+
+	ap_macmode = mac_mode;
+	if (mac_mode == MACLIST_MODE_DISABLED) {
+
+		bzero(&ap_black_list, sizeof(struct mflist));
+
+		dev_wlc_ioctl(dev, WLC_SET_MACMODE, &mac_mode, sizeof(mac_mode));
+	} else {
+		scb_val_t scbval;
+		char mac_buf[256] = {0};
+		struct maclist *assoc_maclist = (struct maclist *) mac_buf;
+
+		mac_mode = MACLIST_MODE_ALLOW;
+
+		dev_wlc_ioctl(dev, WLC_SET_MACMODE, &mac_mode, sizeof(mac_mode));
+
+		length = sizeof(white_maclist->count)+white_maclist->count*ETHER_ADDR_LEN;
+		dev_wlc_ioctl(dev, WLC_SET_MACLIST, white_maclist, length);
+		WL_SOFTAP(("White List, length %d:\n", length));
+		for (i = 0; i < white_maclist->count; i++)
+			WL_SOFTAP(("mac %d: %02X:%02X:%02X:%02X:%02X:%02X\n",
+				i, white_maclist->ea[i].octet[0], white_maclist->ea[i].octet[1],
+				white_maclist->ea[i].octet[2],
+				white_maclist->ea[i].octet[3], white_maclist->ea[i].octet[4],
+				white_maclist->ea[i].octet[5]));
+
+		bcopy(black_maclist, &ap_black_list, sizeof(ap_black_list));
+
+		WL_SOFTAP(("Black List, size %d:\n", sizeof(ap_black_list)));
+		for (i = 0; i < ap_black_list.count; i++)
+			WL_SOFTAP(("mac %d: %02X:%02X:%02X:%02X:%02X:%02X\n",
+				i, ap_black_list.ea[i].octet[0], ap_black_list.ea[i].octet[1],
+				ap_black_list.ea[i].octet[2],
+				ap_black_list.ea[i].octet[3],
+				ap_black_list.ea[i].octet[4], ap_black_list.ea[i].octet[5]));
+
+		dev_wlc_ioctl(dev, WLC_GET_ASSOCLIST, assoc_maclist, 256);
+		if (assoc_maclist->count) {
+			int j;
+			for (i = 0; i < assoc_maclist->count; i++) {
+				for (j = 0; j < white_maclist->count; j++) {
+					if (!bcmp(&assoc_maclist->ea[i], &white_maclist->ea[j],
+						ETHER_ADDR_LEN)) {
+						WL_SOFTAP(("match allow, let it be\n"));
+						break;
+					}
+				}
+				if (j == white_maclist->count) {
+						WL_SOFTAP(("match black, deauth it\n"));
+						scbval.val = htod32(1);
+						bcopy(&assoc_maclist->ea[i], &scbval.ea,
+							ETHER_ADDR_LEN);
+						dev_wlc_ioctl(dev,
+							WLC_SCB_DEAUTHENTICATE_FOR_REASON, &scbval,
+							sizeof(scb_val_t));
+				}
+			}
+		}
+	}
+	return 0;
+}
+#endif
+
+
+#ifdef SOFTAP
+int set_macfilt_from_string(struct mflist *pmflist, char **param_str)
+{
+	return 0;
+}
+#endif
+
+
+#ifdef SOFTAP
+#define PARAM_OFFSET PROFILE_OFFSET
+
+int wl_iw_process_private_ascii_cmd(
+			struct net_device *dev,
+			struct iw_request_info *info,
+			union iwreq_data *dwrq,
+			char *cmd_str)
+{
+	int ret = 0;
+	char *sub_cmd = cmd_str + PROFILE_OFFSET + strlen("ASCII_CMD=");
+
+	WL_SOFTAP(("\n %s: ASCII_CMD: offs_0:%s, offset_32:\n'%s'\n",
+		__FUNCTION__, cmd_str, cmd_str + PROFILE_OFFSET));
+
+	if (strnicmp(sub_cmd, "AP_CFG", strlen("AP_CFG")) == 0) {
+
+		WL_SOFTAP((" AP_CFG \n"));
+
+		ap_mode = 0;
+
+		if (init_ap_profile_from_string(cmd_str+PROFILE_OFFSET, &my_ap) != 0) {
+			WL_ERROR(("ERROR: SoftAP CFG prams !\n"));
+			ret = -1;
+		} else {
+			set_ap_cfg(dev, &my_ap);
+		}
+
+	} else if (strnicmp(sub_cmd, "AP_BSS_START", strlen("AP_BSS_START")) == 0) {
+
+		WL_SOFTAP(("\n SOFTAP - ENABLE BSS \n"));
+
+		WL_SOFTAP(("\n!!! got 'WL_AP_EN_BSS' from WPA supplicant, dev:%s\n", dev->name));
+
+		if (ap_net_dev == NULL) {
+			printf("\n ERROR: SOFTAP net_dev* is NULL !!!\n");
+		} else {
+			iwpriv_en_ap_bss(ap_net_dev, info, dwrq, cmd_str);
+		}
+
+	} else if (strnicmp(sub_cmd, "ASSOC_LST", strlen("ASSOC_LST")) == 0) {
+		/* no code yet */
+	} else if (strnicmp(sub_cmd, "AP_BSS_STOP", strlen("AP_BSS_STOP")) == 0) {
+		WL_SOFTAP((" \n temp DOWN SOFTAP\n"));
+		ret = dev_iw_write_cfg1_bss_var(dev, 0);
+	}
+
+	return ret;
+}
+#endif
+
 static int
 wl_iw_set_priv(
 	struct net_device *dev,
@@ -3888,6 +5155,14 @@ wl_iw_set_priv(
 	    }
 	    else if (strnicmp(extra, "POWERMODE", strlen("POWERMODE")) == 0)
 			ret = wl_iw_set_btcoex_dhcp(dev, info, (union iwreq_data *)dwrq, extra);
+	#ifdef SOFTAP
+		else if (strnicmp(extra, "ASCII_CMD", strlen("ASCII_CMD")) == 0) {
+			wl_iw_process_private_ascii_cmd(dev, info, (union iwreq_data *)dwrq, extra);
+		} else if (strnicmp(extra, "AP_MAC_LIST_SET", strlen("AP_MAC_LIST_SET")) == 0) {
+			WL_SOFTAP(("penguin, set AP_MAC_LIST_SET\n"));
+			set_ap_mac_list(dev, (extra + PROFILE_OFFSET));
+		}
+#endif
 	    else {
 			snprintf(extra, MAX_WX_STRING, "OK");
 			dwrq->length = strlen("OK") + 1;
@@ -4007,7 +5282,29 @@ static const iw_handler wl_iw_priv_handler[] = {
 	NULL,
 	(iw_handler)wl_iw_control_wl_off,
 	NULL,
-	(iw_handler)wl_iw_control_wl_on
+	(iw_handler)wl_iw_control_wl_on,
+	#ifdef SOFTAP
+	NULL,
+	(iw_handler)iwpriv_set_ap_config,
+
+	NULL,
+	(iw_handler)iwpriv_get_assoc_list,
+
+	NULL,
+	(iw_handler)iwpriv_set_mac_filters,
+
+	NULL,
+	(iw_handler)iwpriv_en_ap_bss,
+
+	NULL,
+	(iw_handler)iwpriv_wpasupp_loop_tst,
+
+	NULL,
+	(iw_handler)iwpriv_softap_stop,
+
+	NULL,
+	(iw_handler)iwpriv_fw_reload
+#endif
 };
 
 static const struct iw_priv_args wl_iw_priv_args[] = {
@@ -4052,7 +5349,58 @@ static const struct iw_priv_args wl_iw_priv_args[] = {
 		0,
 		IW_PRIV_TYPE_CHAR | IW_PRIV_SIZE_FIXED | MAX_WX_STRING,
 		"START"
-	}
+	},
+
+#ifdef SOFTAP
+	{
+		WL_SET_AP_CFG,
+		IW_PRIV_TYPE_CHAR |  256,
+		0,
+		"AP_SET_CFG"
+	},
+
+	{
+		WL_AP_STA_LIST,
+		0,
+		IW_PRIV_TYPE_CHAR | 0,
+		"AP_GET_STA_LIST"
+	},
+
+	{
+		WL_AP_MAC_FLTR,
+		IW_PRIV_TYPE_CHAR | 256,
+		IW_PRIV_TYPE_CHAR | IW_PRIV_SIZE_FIXED | 0,
+		"AP_SET_MAC_FLTR"
+	},
+
+	{
+		WL_AP_BSS_START,
+		0,
+		IW_PRIV_TYPE_CHAR | IW_PRIV_SIZE_FIXED | MAX_WX_STRING,
+		"AP_BSS_START"
+	},
+
+	{
+		AP_LPB_CMD,
+		IW_PRIV_TYPE_CHAR | 256,
+		IW_PRIV_TYPE_CHAR | IW_PRIV_SIZE_FIXED | 0,
+		"AP_LPB_CMD"
+	},
+
+	{
+		WL_AP_STOP,
+		IW_PRIV_TYPE_CHAR | IW_PRIV_SIZE_FIXED | 0,
+		IW_PRIV_TYPE_CHAR | IW_PRIV_SIZE_FIXED | 0,
+		"AP_BSS_STOP"
+	},
+
+	{
+		WL_FW_RELOAD,
+		IW_PRIV_TYPE_CHAR | 256,
+		IW_PRIV_TYPE_CHAR | IW_PRIV_SIZE_FIXED | 0,
+		"WL_FW_RELOAD"
+	},
+#endif
 };
 
 const struct iw_handler_def wl_iw_handler_def =
@@ -4289,6 +5637,35 @@ wl_iw_event(struct net_device *dev, wl_event_msg_t *e, void* data)
 
 	
 	switch (event_type) {
+#if defined(SOFTAP)
+	case WLC_E_PRUNE:
+		if (ap_mode) {
+			char *macaddr = (char *)&e->addr;
+			WL_SOFTAP(("PRUNE received, %02X:%02X:%02X:%02X:%02X:%02X!\n",
+				macaddr[0], macaddr[1], macaddr[2], macaddr[3], \
+				macaddr[4], macaddr[5]));
+
+			if (ap_macmode) {
+				int i;
+				for (i = 0; i < ap_black_list.count; i++) {
+					if (!bcmp(macaddr, &ap_black_list.ea[i], \
+						sizeof(struct ether_addr))) {
+						WL_SOFTAP(("mac in black list, ignore it\n"));
+						break;
+					}
+				}
+
+				if (i == ap_black_list.count) {
+					char mac_buf[32] = {0};
+					sprintf(mac_buf, "STA_BLOCK %02X:%02X:%02X:%02X:%02X:%02X",
+						macaddr[0], macaddr[1], macaddr[2],
+						macaddr[3], macaddr[4], macaddr[5]);
+					wl_iw_send_priv_event(priv_dev, mac_buf);
+				}
+			}
+		}
+		break;
+#endif
 	case WLC_E_TXFAIL:
 		cmd = IWEVTXDROP;
 		memcpy(wrqu.addr.sa_data, &e->addr, ETHER_ADDR_LEN);
@@ -4298,12 +5675,26 @@ wl_iw_event(struct net_device *dev, wl_event_msg_t *e, void* data)
 	case WLC_E_JOIN:
 	case WLC_E_ASSOC_IND:
 	case WLC_E_REASSOC_IND:
+	#if defined(SOFTAP)
+		WL_SOFTAP(("STA connect received %d\n", event_type));
+		if (ap_mode) {
+			wl_iw_send_priv_event(priv_dev, "STA_JOIN");
+			return;
+		}
+#endif
 		memcpy(wrqu.addr.sa_data, &e->addr, ETHER_ADDR_LEN);
 		wrqu.addr.sa_family = ARPHRD_ETHER;
 		cmd = IWEVREGISTERED;
 		break;
 	case WLC_E_DEAUTH_IND:
 	case WLC_E_DISASSOC_IND:
+	#if defined(SOFTAP)
+		WL_SOFTAP(("STA disconnect received %d\n", event_type));
+		if (ap_mode) {
+			wl_iw_send_priv_event(priv_dev, "STA_LEAVE");
+			return;
+		}
+#endif
 		cmd = SIOCGIWAP;
 		bzero(wrqu.addr.sa_data, ETHER_ADDR_LEN);
 		wrqu.addr.sa_family = ARPHRD_ETHER;
@@ -4313,9 +5704,17 @@ wl_iw_event(struct net_device *dev, wl_event_msg_t *e, void* data)
 	case WLC_E_NDIS_LINK:
 		cmd = SIOCGIWAP;
 		if (!(flags & WLC_EVENT_MSG_LINK)) {
-			
-			
+#ifdef SOFTAP
+			if (ap_mode && !strncmp(dev->name, "wl0.1", 5)) {
+				WL_SOFTAP(("AP DOWN %d\n", event_type));
+				wl_iw_send_priv_event(priv_dev, "AP_DOWN");
+			} else {
+				WL_TRACE(("STA_Link Down\n"));
+				g_ss_cache_ctrl.m_link_down = 1;
+			}
+#else
 			g_ss_cache_ctrl.m_link_down = 1;
+#endif
 			WL_TRACE(("Link Down\n"));
 			bzero(wrqu.addr.sa_data, ETHER_ADDR_LEN);
 			bzero(&extra, ETHER_ADDR_LEN);
@@ -4327,6 +5726,14 @@ wl_iw_event(struct net_device *dev, wl_event_msg_t *e, void* data)
 
 			
 			memcpy(g_ss_cache_ctrl.m_active_bssid, &e->addr, ETHER_ADDR_LEN);
+			#ifdef SOFTAP
+			if (ap_mode && !strncmp(dev->name, "wl0.1", 5)) {
+				WL_SOFTAP(("AP UP %d\n", event_type));
+				wl_iw_send_priv_event(priv_dev, "AP_UP");
+			} else {
+				WL_TRACE(("STA_LINK_UP\n"));
+			}
+#endif
 			WL_TRACE(("Link UP\n"));
 		}
 		wrqu.addr.sa_family = ARPHRD_ETHER;
@@ -4720,6 +6127,10 @@ int wl_iw_attach(struct net_device *dev, void * dhdp)
 	wl_iw_bt_init(dev);
 #endif 
 
+#ifdef SOFTAP
+	priv_dev = dev;
+#endif
+
 	return 0;
 }
 
@@ -4753,4 +6164,10 @@ void wl_iw_detach(void)
 #ifdef COEX_DHCP
 	wl_iw_bt_release();
 #endif 
+#ifdef SOFTAP
+	if (ap_mode) {
+		WL_TRACE(("\n%s AP is going down\n", __FUNCTION__));
+		wl_iw_send_priv_event(priv_dev, "AP_DOWN");
+	}
+#endif
 }
