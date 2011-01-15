@@ -137,7 +137,8 @@ static void cpufreq_idle(void)
 	u64 *cpu_time_in_idle;
 	u64 *cpu_idle_exit_time;
 
-	pm_idle_old();
+	if(pm_idle_old)
+		pm_idle_old();
 
 	if (!cpumask_test_cpu(smp_processor_id(), policy->cpus))
 			return;
