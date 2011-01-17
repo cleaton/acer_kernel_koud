@@ -81,10 +81,10 @@
 /* AVR Sensitivity */
 #define USE_FS                    1
 #define SENSITIVITY_REG           0x60
-#define SENSITIVITY               20
+#define SENSITIVITY               30
 
 /* Vibrator */
-#define VIB_DELAY_TIME        30
+#define VIB_DELAY_TIME        35
 void pmic_vibrator_on(struct work_struct *work);
 void pmic_vibrator_off(struct work_struct *work);
 
@@ -516,7 +516,7 @@ static void avr_work_func(struct work_struct *work)
 	/* Send key release if not equal to last key */
 	if( key_code != avr_data.prekey ){
 		input_report_key(avr_data.input, avr_data.prekey, 0);
-		if(vibr) {
+		if(vibr == 1 && key_code != 0) {
 			pmic_vibrator_on(NULL);
 			schedule_delayed_work(&vib_wq, msecs_to_jiffies(VIB_DELAY_TIME));
 		}
