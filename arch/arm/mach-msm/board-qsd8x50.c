@@ -1795,7 +1795,7 @@ static int wifi_power(int on)
 
     //In order to follow wifi power sequence, we have to detect bt power status
 
-    if (on) {
+    if (on == 1 || on == 3) {
         mutex_lock(&wifibtmutex);
 	wake_lock(&wifi_wake_lock);
         bt_on=gpio_get_value(106);
@@ -1815,8 +1815,8 @@ static int wifi_power(int on)
             msleep(100);
             gpio_set_value(WL_RST, 1); /* WL_RST */
         }
-
-        wifi_set_carddetect(1);
+	if(on == 1)
+        	wifi_set_carddetect(1);
         pr_info(KERN_INFO"Wifi Power ON\n");
         mutex_unlock(&wifibtmutex);
 
@@ -1825,8 +1825,8 @@ static int wifi_power(int on)
         gpio_set_value(WL_PWR_EN, 0); /* WL_PWR_EN */
         msleep(100);
         gpio_set_value(WL_RST, 0); /* WL_RST */
-
-        wifi_set_carddetect(0);
+	if(on == 0)
+        	wifi_set_carddetect(0);
         pr_info("Wifi Power OFF\n");
     }
     return 0;
@@ -1863,16 +1863,16 @@ int wifi_set_carddetect(int val)
 
 EXPORT_SYMBOL(wifi_set_carddetect);
 int bcm_wlan_power_off(int a) {
-	(void)a;
-	wifi_power(0);
-	wifi_set_carddetect(0);
+//	(void)a;
+	wifi_power(2*a-2);
+	//wifi_set_carddetect(0);
 }
 EXPORT_SYMBOL(bcm_wlan_power_off);
 
 int bcm_wlan_power_on(int a) {
-	(void)a;
-	wifi_power(1);
-	wifi_set_carddetect(1);
+//	(void)a;
+	wifi_power(2*a-1);
+	//wifi_set_carddetect(1);
 }
 EXPORT_SYMBOL(bcm_wlan_power_on);
 

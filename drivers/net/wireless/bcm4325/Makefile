@@ -2,7 +2,7 @@
 DHDCFLAGS =  -DLINUX -DBCMDRIVER -DBCMDONGLEHOST -DDHDTHREAD -DBCMWPA2 -DBCMWAPI_WPI    \
              -DUNRELEASEDCHIP -DCONFIG_WIRELESS_EXT -DDHD_GPL -DDHD_SCHED -DDHD_DEBUG   \
              -DSDTEST -DBDC -DTOE -DDHD_BCMEVENTS -DSHOW_EVENTS -DSDIO_ISR_THREAD       \
-             -DBCMSDIO -DDHD_GPL -DBCMLXSDMMC -DBCMPLATFORM_BUS -DSOFTAP                         \
+             -DBCMSDIO -DDHD_GPL -DBCMLXSDMMC -DBCMPLATFORM_BUS -DSOFTAP -DCUSTOMER_HW  \
              -Wall -Wstrict-prototypes -Werror                                          \
              -Idrivers/net/wireless/bcm4325 -Idrivers/net/wireless/bcm4325/include
 
