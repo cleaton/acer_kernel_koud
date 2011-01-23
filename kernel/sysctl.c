@@ -100,11 +100,8 @@ static int neg_one = -1;
 static int one = 1;
 #endif
 
-#if defined(CONFIG_MMU) && defined(CONFIG_FILE_LOCKING)
-static int two = 2;
-#endif
-
 static int zero;
+static int two = 2;
 static unsigned long one_ul = 1;
 static int one_hundred = 100;
 
@@ -954,7 +951,7 @@ static struct ctl_table vm_table[] = {
 	},
 	{
 		.ctl_name	= VM_PAGE_CLUSTER,
-		.procname	= "page-cluster", 
+		.procname	= "page-cluster",
 		.data		= &page_cluster,
 		.maxlen		= sizeof(int),
 		.mode		= 0644,
@@ -1383,10 +1380,7 @@ static struct ctl_table fs_table[] = {
 		.data		= &lease_break_time,
 		.maxlen		= sizeof(int),
 		.mode		= 0644,
-		.proc_handler	= &proc_dointvec_minmax,
-		.strategy	= &sysctl_intvec,
-		.extra1		= &zero,
-		.extra2		= &two,
+		.proc_handler	= &proc_dointvec,
 	},
 #endif
 #ifdef CONFIG_AIO
@@ -1412,7 +1406,7 @@ static struct ctl_table fs_table[] = {
 		.mode		= 0555,
 		.child		= inotify_table,
 	},
-#endif	
+#endif
 #ifdef CONFIG_EPOLL
 	{
 		.procname	= "epoll",
@@ -1427,7 +1421,10 @@ static struct ctl_table fs_table[] = {
 		.data		= &suid_dumpable,
 		.maxlen		= sizeof(int),
 		.mode		= 0644,
-		.proc_handler	= &proc_dointvec,
+		.proc_handler	= &proc_dointvec_minmax,
+		.strategy	= &sysctl_intvec,
+		.extra1		= &zero,
+		.extra2		= &two,
 	},
 #if defined(CONFIG_BINFMT_MISC) || defined(CONFIG_BINFMT_MISC_MODULE)
 	{
@@ -1697,7 +1694,7 @@ int do_sysctl(int __user *name, int nlen, void __user *oldval, size_t __user *ol
 
 	for (head = sysctl_head_next(NULL); head;
 			head = sysctl_head_next(head)) {
-		error = parse_table(name, nlen, oldval, oldlenp, 
+		error = parse_table(name, nlen, oldval, oldlenp,
 					newval, newlen,
 					head->root, head->ctl_table);
 		if (error != -ENOTDIR) {
@@ -1895,7 +1892,7 @@ static void try_attach(struct ctl_table_header *p, struct ctl_table_header *q)
  * cover common cases -
  *
  * proc_dostring(), proc_dointvec(), proc_dointvec_jiffies(),
- * proc_dointvec_userhz_jiffies(), proc_dointvec_minmax(), 
+ * proc_dointvec_userhz_jiffies(), proc_dointvec_minmax(),
  * proc_doulongvec_ms_jiffies_minmax(), proc_doulongvec_minmax()
  *
  * It is the handler's job to read the input buffer from user memory
@@ -2211,16 +2208,16 @@ static int __do_proc_dointvec(void *tbl_data, struct ctl_table *table,
 	int *i, vleft, first=1, neg, val;
 	unsigned long lval;
 	size_t left, len;
-	
+
 	char buf[TMPBUFLEN], *p;
 	char __user *s = buffer;
-	
+
 	if (!tbl_data || !table->maxlen || !*lenp ||
 	    (*ppos && !write)) {
 		*lenp = 0;
 		return 0;
 	}
-	
+
 	i = (int *) tbl_data;
 	vleft = table->maxlen / sizeof(*i);
 	left = *lenp;
@@ -2272,7 +2269,7 @@ static int __do_proc_dointvec(void *tbl_data, struct ctl_table *table,
 			p = buf;
 			if (!first)
 				*p++ = '\t';
-	
+
 			if (conv(&neg, &lval, i, 0, data))
 				break;
 
@@ -2330,7 +2327,7 @@ static int do_proc_dointvec(struct ctl_table *table, int write, struct file *fil
  * @ppos: file position
  *
  * Reads/writes up to table->maxlen/sizeof(unsigned int) integer
- * values from/to the user buffer, treated as an ASCII string. 
+ * values from/to the user buffer, treated as an ASCII string.
  *
  * Returns 0 on success.
  */
@@ -2381,8 +2378,8 @@ struct do_proc_dointvec_minmax_conv_param {
 	int *max;
 };
 
-static int do_proc_dointvec_minmax_conv(int *negp, unsigned long *lvalp, 
-					int *valp, 
+static int do_proc_dointvec_minmax_conv(int *negp, unsigned long *lvalp,
+					int *valp,
 					int write, void *data)
 {
 	struct do_proc_dointvec_minmax_conv_param *param = data;
@@ -2446,19 +2443,19 @@ static int __do_proc_doulongvec_minmax(void *data, struct ctl_table *table, int 
 	size_t len, left;
 	char buf[TMPBUFLEN], *p;
 	char __user *s = buffer;
-	
+
 	if (!data || !table->maxlen || !*lenp ||
 	    (*ppos && !write)) {
 		*lenp = 0;
 		return 0;
 	}
-	
+
 	i = (unsigned long *) data;
 	min = (unsigned long *) table->extra1;
 	max = (unsigned long *) table->extra2;
 	vleft = table->maxlen / sizeof(unsigned long);
 	left = *lenp;
-	
+
 	for (; left && vleft--; i++, min++, max++, first=0) {
 		if (write) {
 			while (left) {
@@ -2677,7 +2674,7 @@ static int do_proc_dointvec_ms_jiffies_conv(int *negp, unsigned long *lvalp,
  * @ppos: file position
  *
  * Reads/writes up to table->maxlen/sizeof(unsigned int) integer
- * values from/to the user buffer, treated as an ASCII string. 
+ * values from/to the user buffer, treated as an ASCII string.
  * The values read are assumed to be in seconds, and are converted into
  * jiffies.
  *
@@ -2700,8 +2697,8 @@ int proc_dointvec_jiffies(struct ctl_table *table, int write, struct file *filp,
  * @ppos: pointer to the file position
  *
  * Reads/writes up to table->maxlen/sizeof(unsigned int) integer
- * values from/to the user buffer, treated as an ASCII string. 
- * The values read are assumed to be in 1/USER_HZ seconds, and 
+ * values from/to the user buffer, treated as an ASCII string.
+ * The values read are assumed to be in 1/USER_HZ seconds, and
  * are converted into jiffies.
  *
  * Returns 0 on success.
@@ -2724,8 +2721,8 @@ int proc_dointvec_userhz_jiffies(struct ctl_table *table, int write, struct file
  * @ppos: the current position in the file
  *
  * Reads/writes up to table->maxlen/sizeof(unsigned int) integer
- * values from/to the user buffer, treated as an ASCII string. 
- * The values read are assumed to be in 1/1000 seconds, and 
+ * values from/to the user buffer, treated as an ASCII string.
+ * The values read are assumed to be in 1/1000 seconds, and
  * are converted into jiffies.
  *
  * Returns 0 on success.
@@ -2817,7 +2814,7 @@ int proc_doulongvec_ms_jiffies_minmax(struct ctl_table *table, int write,
 
 #ifdef CONFIG_SYSCTL_SYSCALL
 /*
- * General sysctl support routines 
+ * General sysctl support routines
  */
 
 /* The generic sysctl data routine (used if no strategy routine supplied) */
@@ -2859,9 +2856,9 @@ int sysctl_string(struct ctl_table *table,
 		  void __user *oldval, size_t __user *oldlenp,
 		  void __user *newval, size_t newlen)
 {
-	if (!table->data || !table->maxlen) 
+	if (!table->data || !table->maxlen)
 		return -ENOTDIR;
-	
+
 	if (oldval && oldlenp) {
 		size_t bufsize;
 		if (get_user(bufsize, oldlenp))
@@ -2936,7 +2933,7 @@ int sysctl_intvec(struct ctl_table *table,
 	return 0;
 }
 
-/* Strategy function to convert jiffies to seconds */ 
+/* Strategy function to convert jiffies to seconds */
 int sysctl_jiffies(struct ctl_table *table,
 		void __user *oldval, size_t __user *oldlenp,
 		void __user *newval, size_t newlen)
@@ -2959,18 +2956,18 @@ int sysctl_jiffies(struct ctl_table *table,
 				return -EFAULT;
 		}
 	}
-	if (newval && newlen) { 
+	if (newval && newlen) {
 		int new;
 		if (newlen != sizeof(int))
-			return -EINVAL; 
+			return -EINVAL;
 		if (get_user(new, (int __user *)newval))
 			return -EFAULT;
-		*(int *)(table->data) = new*HZ; 
+		*(int *)(table->data) = new*HZ;
 	}
 	return 1;
 }
 
-/* Strategy function to convert jiffies to seconds */ 
+/* Strategy function to convert jiffies to seconds */
 int sysctl_ms_jiffies(struct ctl_table *table,
 		void __user *oldval, size_t __user *oldlenp,
 		void __user *newval, size_t newlen)
@@ -2993,10 +2990,10 @@ int sysctl_ms_jiffies(struct ctl_table *table,
 				return -EFAULT;
 		}
 	}
-	if (newval && newlen) { 
+	if (newval && newlen) {
 		int new;
 		if (newlen != sizeof(int))
-			return -EINVAL; 
+			return -EINVAL;
 		if (get_user(new, (int __user *)newval))
 			return -EFAULT;
 		*(int *)(table->data) = msecs_to_jiffies(new);

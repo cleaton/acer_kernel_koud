@@ -44,7 +44,7 @@ struct logger_log {
 	struct miscdevice	misc;	/* misc device representing the log */
 	wait_queue_head_t	wq;	/* wait queue for readers */
 	struct list_head	readers; /* this log's readers */
-	spinlock_t		bufflock;	/* spinlock for buffer */
+	spinlock_t		bufflock;  /* spinlock for buffer */
 	size_t			w_off;	/* current write head offset */
 	size_t			head;	/* new readers start here */
 	const size_t		size;	/* size of the log */
@@ -67,7 +67,7 @@ struct logger_reader {
 	struct logger_log *	log;	/* associated log */
 	struct list_head	list;	/* entry in logger_log's list */
 	size_t			r_off;	/* current read head offset */
-	int			fixed;	/* flag if read offset fixed*/
+		int			fixed;	/* flag if read offset fixed*/
 };
 
 /*
@@ -150,7 +150,7 @@ static inline struct logger_log *file_get_log(const struct file * const file)
  * Caller needs to hold log->bufflock.
  */
 static __u32 get_entry_len(const struct logger_log * const log,
-			const size_t off)
+			   const size_t off)
 {
 	__u16 val;
 
@@ -280,7 +280,7 @@ start:
 
 	/* is there still something to read or did we race? */
 	if (unlikely(log->w_off == reader->r_off)) {
-		spin_unlock_irqrestore(&log->bufflock, flags);
+		spin_lock_irqsave(&log->bufflock, flags);
 		goto start;
 	}
 
@@ -765,7 +765,7 @@ static int logger_open(struct inode *inode, struct file *file)
 		return -ENODEV;
 
 	if (file->f_mode & FMODE_READ) {
-		/*
+	/*
 		 * GFP_KERNEL here because we are in user context and can
 		 * sleep if necessary.
 		 */
@@ -1077,6 +1077,7 @@ static struct logger_log VAR = { \
 DEFINE_LOGGER_DEVICE(log_main, LOGGER_LOG_MAIN, 64*1024)
 DEFINE_LOGGER_DEVICE(log_events, LOGGER_LOG_EVENTS, 256*1024)
 DEFINE_LOGGER_DEVICE(log_radio, LOGGER_LOG_RADIO, 64*1024)
+DEFINE_LOGGER_DEVICE(log_system, LOGGER_LOG_SYSTEM, 64*1024)
 
 static struct logger_log *get_log_from_minor(const int minor)
 {
@@ -1086,6 +1087,8 @@ static struct logger_log *get_log_from_minor(const int minor)
 		return &log_events;
 	if (log_radio.misc.minor == minor)
 		return &log_radio;
+	if (log_system.misc.minor == minor)
+	      return &log_system;
 	return NULL;
 }
 
@@ -1195,7 +1198,7 @@ static int __init init_log(struct logger_log * const log)
 	       (unsigned long) log->size >> 10, log->misc.name);
 	goto out;
 
-out_put_kobj:
+	out_put_kobj:
 	kobject_put(&log->kobj);
 	misc_deregister(&log->misc);
 out:
@@ -1234,6 +1237,10 @@ static int __init logger_init(void)
 	if (unlikely(ret))
 		goto out_destroy_events;
 
+	ret = init_log(&log_system);
+	if (unlikely(ret))
+		goto out_destroy_system;
+
 /* leave room for more init functionality */
 	goto out;
 
@@ -1243,7 +1250,10 @@ out_destroy_main:
 	destroy_log(&log_main);
 out_unregister_kset:
 	kset_unregister(logger_kset);
+out_destroy_system:
+	destroy_log(&log_system);
 out:
 	return ret;
 }
 device_initcall(logger_init);
+

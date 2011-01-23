@@ -48,7 +48,7 @@ void __ptrace_link(struct task_struct *child, struct task_struct *new_parent)
 	list_add(&child->ptrace_entry, &new_parent->ptraced);
 	child->parent = new_parent;
 }
- 
+
 /*
  * Turn a tracing stop into a normal stop now, since with no tracer there
  * would be no way to wake it up with SIGCONT or SIGKILL.  If there was a
@@ -235,18 +235,10 @@ out:
 	return retval;
 }
 
-static inline void __ptrace_detach(struct task_struct *child, unsigned int data)
-{
-	child->exit_code = data;
-	/* .. re-parent .. */
-	__ptrace_unlink(child);
-	/* .. and wake it up. */
-	if (child->exit_state != EXIT_ZOMBIE)
-		wake_up_process(child);
-}
-
 int ptrace_detach(struct task_struct *child, unsigned int data)
 {
+	int dead = 0;
+
 	if (!valid_signal(data))
 		return -EIO;
 
@@ -256,9 +248,18 @@ int ptrace_detach(struct task_struct *child, unsigned int data)
 
 	write_lock_irq(&tasklist_lock);
 	/* protect against de_thread()->release_task() */
-	if (child->ptrace)
-		__ptrace_detach(child, data);
+	if (child->ptrace) {
+		child->exit_code = data;
+
+		dead = __ptrace_detach(current, child);
+
+		if (!child->exit_state)
+			wake_up_process(child);
+	}
 	write_unlock_irq(&tasklist_lock);
+
+	if (unlikely(dead))
+		release_task(child);
 
 	return 0;
 }
@@ -283,7 +284,7 @@ int ptrace_readdata(struct task_struct *tsk, unsigned long src, char __user *dst
 		copied += retval;
 		src += retval;
 		dst += retval;
-		len -= retval;			
+		len -= retval;
 	}
 	return copied;
 }
@@ -308,7 +309,7 @@ int ptrace_writedata(struct task_struct *tsk, char __user *src, unsigned long ds
 		copied += retval;
 		src += retval;
 		dst += retval;
-		len -= retval;			
+		len -= retval;
 	}
 	return copied;
 }
