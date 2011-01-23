@@ -42,7 +42,26 @@
 #include <linux/videodev2.h>
 
 
-#define FM_DEBUG
+#undef FM_DEBUG
+
+/* constants */
+#define  RDS_BLOCKS_NUM		(4)
+#define BYTES_PER_BLOCK		(3)
+#define MAX_PS_LENGTH		(96)
+#define MAX_RT_LENGTH		(64)
+
+/* Standard buffer size */
+#define STD_BUF_SIZE		(64)
+/* Search direction */
+#define SRCH_DIR_UP			(0)
+#define SRCH_DIR_DOWN		(1)
+
+/* control options */
+#define CTRL_ON				(1)
+#define CTRL_OFF			(0)
+
+#define US_LOW_BAND			(87.5)
+#define US_HIGH_BAND		(108)
 
 #undef FMDBG
 #ifdef FM_DEBUG
@@ -50,6 +69,27 @@
 #else
   #define FMDBG(fmt, args...)
 #endif
+
+#undef FMDERR
+#define FMDERR(fmt, args...) printk(KERN_INFO "tavarua_radio: " fmt, ##args)
+
+#undef FMDBG_I2C
+#ifdef FM_DEBUG_I2C
+  #define FMDBG_I2C(fmt, args...) printk(KERN_INFO "fm_i2c: " fmt, ##args)
+#else
+  #define FMDBG_I2C(fmt, args...)
+#endif
+
+/* function declarations */
+/* FM Core audio paths. */
+#define TAVARUA_AUDIO_OUT_ANALOG_OFF	(0)
+#define TAVARUA_AUDIO_OUT_ANALOG_ON	(1)
+#define TAVARUA_AUDIO_OUT_DIGITAL_OFF	(0)
+#define TAVARUA_AUDIO_OUT_DIGITAL_ON	(1)
+
+int tavarua_set_audio_path(int digital_on, int analog_on);
+
+/* defines and enums*/
 
 #define MARIMBA_A0 0x01010013
 #define MARIMBA_2_1 0x02010204
@@ -191,6 +231,16 @@ enum register_t {
 #define RDSRTEN		(1 << 3)
 #define RDSPSEN		(1 << 4)
 
+/* Audio path control */
+#define AUDIORX_ANALOG_OFFSET 	0
+#define AUDIORX_ANALOG_MASK 	(1 << AUDIORX_ANALOG_OFFSET)
+#define AUDIORX_DIGITAL_OFFSET 	1
+#define AUDIORX_DIGITAL_MASK 	(1 << AUDIORX_DIGITAL_OFFSET)
+#define AUDIOTX_OFFSET		2
+#define AUDIOTX_MASK		(1 << AUDIOTX_OFFSET)
+#define I2SCTRL_OFFSET		3
+#define I2SCTRL_MASK		(1 << I2SCTRL_OFFSET)
+
 /* Search options */
 enum search_t {
 	SEEK,
@@ -213,7 +263,7 @@ enum search_t {
 
 #define FM_ENABLE	0x22
 #define SET_REG_FIELD(reg, val, offset, mask) \
-	(reg = (reg & ~mask) | ((val << offset) & mask))
+	(reg = (reg & ~mask) | (((val) << offset) & mask))
 #define GET_REG_FIELD(reg, offset, mask) ((reg & mask) >> offset)
 
 enum radio_state_t {

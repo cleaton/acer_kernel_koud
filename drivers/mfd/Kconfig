@@ -7,7 +7,7 @@ menu "Multifunction device drivers"
 
 config MFD_CORE
 	tristate
-	default n
+	default y
 
 config MFD_SM501
 	tristate "Support for Silicon Motion SM501"
@@ -108,7 +108,7 @@ config TWL4030_CORE
 
 config MARIMBA_CORE
 	tristate "Marimba Core"
-	depends on I2C && ARCH_MSM7X30
+	depends on I2C 
 	default n
 	help
 	  Enables the Marimba Core driver. The core driver provides
