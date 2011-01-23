@@ -66,3 +66,4 @@ ncscope.*
 *.orig
 *~
 \#*#
+.DS_Store

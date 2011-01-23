@@ -28,10 +28,10 @@
 #define COORDINATE_COMPARE_MODE  0x0d
 
 #define SENSITIVITY_REG          0x67
-#define SENSITIVITY              30
+#define SENSITIVITY              35
 
 #define NOISE_REG                0x37
-#define NOISE                    30
+#define NOISE                    35
 
 #define VERSION_REG              0x7c
 #define SUB_VERSION_REG          0x78
@@ -216,33 +216,14 @@ i2c_err:
 	return -ENXIO;
 }
 
-static bool speedch (int speed, int oldspeed) //check speed changing
-{
-	bool sign1;
-	bool sign2;
-	sign1=(speed==abs(speed)) ? 1 : 0;
-	sign2=(oldspeed==abs(oldspeed)) ? 1 : 0;
-	if ((!speed)||(!oldspeed)) return 0;
-	if (sign1!=sign2) return 1;
-	else return 0;
-}
-
 static void h353vl01_work_func(struct work_struct *work)
 {
-	static int finger2_was_pressed=0,was_pressed;
-	static int oldcoord[2][2]={{0,0},{0,0}};
-	static int mascoord[10][2][2];
-	static int oldspeed[2][2]={{0,0},{0,0}};
-	static int curpos;
-	int speed[2][2]={{0,0},{0,0}};
-	bool flag=0;
-
-	unsigned int coord[2][2];
-	unsigned int rawcoord[2][2];
+	unsigned int coord[2][2]= {{0}};
 	uint8_t data_addr = 0x40;
 	uint8_t buf[8] = { 0 };
 	int pressed = 0;
 	int finger2_pressed = 0;
+	int width = 0;
 
 	if (h353_data->status != ACTIVE) {
 		set_mode(h353_data->status);
@@ -254,165 +235,40 @@ static void h353vl01_work_func(struct work_struct *work)
 	if (8 !=i2c_master_recv(h353_data->client, buf, 8))
 		goto i2c_err;
 
-	// coord[0]: finger1, coord[1]: finger2
-	rawcoord[0][0] = buf[0] + (buf[4]*256);
-	rawcoord[0][1] = buf[1] + (buf[5]*256);
-	rawcoord[1][0] = buf[2] + (buf[6]*256);
-	rawcoord[1][1] = buf[3] + (buf[7]*256);
+	/* coord[0]: finger1, coord[1]: finger2 */
+	coord[0][0] = buf[0] + (buf[4]*256);
+	coord[0][1] = buf[1] + (buf[5]*256);
+	coord[1][0] = buf[2] + (buf[6]*256);
+	coord[1][1] = buf[3] + (buf[7]*256);
 
+	pressed = (coord[0][0]||coord[0][1]) ? 1 : 0;
+	finger2_pressed = (coord[1][0]||coord[1][1]) ? 1: 0;
 
-	pressed 	= (rawcoord[0][0]||rawcoord[0][1]) ? 1 : 0;
-	finger2_pressed = (rawcoord[1][0]||rawcoord[1][1]) ? 1 : 0;
+	// New MT framework
+	if (pressed) {
+		input_report_abs(h353_data->input, ABS_MT_POSITION_X, coord[0][0]);
+		input_report_abs(h353_data->input, ABS_MT_POSITION_Y, coord[0][1]);
 
-	if(!finger2_pressed) {
-		//Monotouch, nothing to do
-		coord[0][0]=rawcoord[0][0];
-		coord[0][1]=rawcoord[0][1];
-		coord[1][0]=rawcoord[1][0];
-		coord[1][1]=rawcoord[1][1];
-		//reset mascoord
-		/*for (a=0;a<20;a++)
-		{
-			mascoord[a][0][0]=0;
-			mascoord[a][0][1]=0;
-			mascoord[a][1][0]=0;
-			mascoord[a][1][1]=0;
-		}*/
-		curpos=(-1);
-	} else {
-		if(!was_pressed) {
-			//Ouch, two fingers appear at the same time
-			//Sorry I can't do that :(
-			coord[0][0]=rawcoord[0][0];
-			coord[0][1]=rawcoord[0][1];
-			coord[1][0]=rawcoord[1][0];
-			coord[1][1]=rawcoord[1][1];
-		} else {
-#define dst(x1,y1,x2,y2) (abs(rawcoord[x1][0]-oldcoord[x2][0])+abs(rawcoord[y1][1]-oldcoord[y2][1]))
-#define calibrey 250
-#define calibrex 200
-#define massize 5
-#define accuracy 10
-			int i,k=0;
-			int a;
-			int temp;
-			//Do the nearest math only on the first point, the second one can appear anywhere.
-			for(i=1;i<4;++i) {
-				if(dst(i%2, i/2, 0, 0)<dst(k%2, k/2, 0, 0))
-					k=i;
-			}
-			coord[0][0]=rawcoord[k%2][0];
-			coord[0][1]=rawcoord[k/2][1];
-			coord[1][0]=rawcoord[!(k%2)][0];
-			coord[1][1]=rawcoord[!(k/2)][1];
-			//writing mascoord
-			if (curpos==massize-1) //mascord filled
-			{
-				for (a=1;a<massize;a++)//move all coordinates
-				{
-					mascoord[a-1][0][0]=mascoord[a][0][0];
-					mascoord[a-1][0][1]=mascoord[a][0][1];
-					mascoord[a-1][1][0]=mascoord[a][1][0];
-					mascoord[a-1][1][1]=mascoord[a][1][1];
-				}
-			}
-			else curpos++;
-			//writing current coord to massive
-			if (curpos){
-				if ((mascoord[curpos-1][0][0]==coord[0][0])&&(mascoord[curpos-1][0][1]==coord[0][1])&&(mascoord[curpos-1][1][0]==coord[1][0])&&(mascoord[curpos-1][1][1]==coord[1][1])) curpos--;//if there is no moving, nothing happens
-				else if ((coord[0][1]==coord[1][1])||(coord[0][0]==coord[1][0])) curpos--;
-				else 
-				{
-					if (abs(coord[0][0]-mascoord[curpos-1][0][0])<accuracy) mascoord[curpos][0][0]=mascoord[curpos-1][0][0];
-					else mascoord[curpos][0][0]=coord[0][0];
-					if (abs(coord[0][1]-mascoord[curpos-1][0][1])<accuracy) mascoord[curpos][0][1]=mascoord[curpos-1][0][1];
-					else mascoord[curpos][0][1]=coord[0][1];
-					if (abs(coord[1][0]-mascoord[curpos-1][1][0])<accuracy) mascoord[curpos][1][0]=mascoord[curpos-1][1][0];
-					else mascoord[curpos][1][0]=coord[1][0];
-					if (abs(coord[1][1]-mascoord[curpos-1][1][1])<accuracy) mascoord[curpos][1][1]=mascoord[curpos-1][1][1];
-					else mascoord[curpos][1][1]=coord[1][1];
-				}
-			}
-			else 
-			{
-				mascoord[curpos][0][0]=coord[0][0];
-				mascoord[curpos][0][1]=coord[0][1];
-				mascoord[curpos][1][0]=coord[1][0];
-				mascoord[curpos][1][1]=coord[1][1];
-			}
-			//calculate speed
-			if (curpos==0)
-			{
-				oldspeed[0][0]=0;
-				oldspeed[0][1]=0;
-				oldspeed[1][0]=0;
-				oldspeed[1][1]=0;
-			}
-			else
-			{
-				speed[0][0]=mascoord[curpos][0][0]-mascoord[0][0][0];
-				speed[0][1]=mascoord[curpos][0][1]-mascoord[0][0][1];
-				speed[1][0]=mascoord[curpos][1][0]-mascoord[0][1][0];
-				speed[1][1]=mascoord[curpos][1][1]-mascoord[0][1][1];
-			}
-			//check speed changing (y axis)
-			if (((speedch(speed[0][1],oldspeed[0][1])==1)||(speedch(speed[1][1],oldspeed[1][1])==1))&&(abs(coord[0][1]-coord[1][1])<calibrey))
-			{
-				temp=coord[1][0];
-				coord[1][0]=coord[0][0];
-				coord[0][0]=temp;
-				curpos=-1;
-			}
-			//check speed changing (x axis)
-			if (((speedch(speed[0][0],oldspeed[0][0])==1)||(speedch(speed[1][0],oldspeed[1][0])==1))&&(abs(coord[0][0]-coord[1][0])<calibrex))
-			{
-				temp=coord[1][1];
-				coord[1][1]=coord[0][1];
-				coord[0][1]=temp;
-				curpos=-1;
-			}
-			flag=0;
-			oldspeed[0][0]=speed[0][0];
-			oldspeed[0][1]=speed[0][1];
-			oldspeed[1][0]=speed[1][0];
-			oldspeed[1][1]=speed[1][1];
-		}//end of block
+		/* Calculate event width */
+		if (finger2_pressed) {
+			/* Report the width according to the abs distance of x-axis */
+			width = abs((coord[0][0] - coord[1][0]));
+		}
 	}
-
-	if ( pressed ) {
-		input_report_abs(h353_data->input, ABS_X, coord[0][0] );
-		input_report_abs(h353_data->input, ABS_Y, coord[0][1] );
-	}
-	input_report_abs(h353_data->input, ABS_PRESSURE, pressed ? 128 : 0); 
-	input_report_abs(h353_data->input, ABS_TOOL_WIDTH, 0);
-	input_report_key(h353_data->input, BTN_TOUCH, pressed );
-
-
-	input_report_abs(h353_data->input, ABS_MT_TOUCH_MAJOR, pressed ? 128 : 0);
-	input_report_abs(h353_data->input, ABS_MT_WIDTH_MAJOR, 0);
-	input_report_abs(h353_data->input, ABS_MT_POSITION_X, coord[0][0]);
-	input_report_abs(h353_data->input, ABS_MT_POSITION_Y, coord[0][1]);
+	input_report_abs(h353_data->input, ABS_MT_WIDTH_MAJOR, width);
+	input_report_abs(h353_data->input, ABS_MT_TOUCH_MAJOR, pressed);
 	input_mt_sync(h353_data->input);
+
+	// Report second pointer
 	if (finger2_pressed) {
-		input_report_abs(h353_data->input, ABS_MT_TOUCH_MAJOR, 128);
-		input_report_abs(h353_data->input, ABS_MT_WIDTH_MAJOR, 0);
 		input_report_abs(h353_data->input, ABS_MT_POSITION_X, coord[1][0]);
 		input_report_abs(h353_data->input, ABS_MT_POSITION_Y, coord[1][1]);
-		input_mt_sync(h353_data->input);
-	} else if (finger2_was_pressed) {
-		input_report_abs(h353_data->input, ABS_MT_TOUCH_MAJOR, 0);
-		input_report_abs(h353_data->input, ABS_MT_WIDTH_MAJOR, 0);
-		input_mt_sync(h353_data->input);
 	}
+	input_report_abs(h353_data->input, ABS_MT_WIDTH_MAJOR, width);
+	input_report_abs(h353_data->input, ABS_MT_TOUCH_MAJOR, finger2_pressed);
+	input_mt_sync(h353_data->input);
+
 	input_sync(h353_data->input);
-	oldcoord[0][0]=coord[0][0];
-	oldcoord[0][1]=coord[0][1];
-	oldcoord[1][0]=coord[1][0];
-	oldcoord[1][1]=coord[1][1];
-
-	finger2_was_pressed=finger2_pressed;
-	was_pressed=pressed;
-
 
 	return;
 i2c_err:
@@ -437,25 +293,11 @@ static int __init h353vl01_register_input(struct input_dev *input)
 	input->id.bustype = BUS_I2C;
 	input->evbit[0] =
 		BIT_MASK(EV_SYN) | BIT_MASK(EV_KEY) | BIT_MASK(EV_ABS);
-	input->keybit[BIT_WORD(BTN_TOUCH)] = BIT_MASK(BTN_TOUCH);
-	input->keybit[BIT_WORD(BTN_2)]     = BIT_MASK(BTN_2);
 
-	input_set_abs_params(input, ABS_X, AUO_TS_X_MIN, AUO_TS_X_MAX, 0, 0);
-	input_set_abs_params(input, ABS_Y, AUO_TS_Y_MIN, AUO_TS_Y_MAX, 0, 0);
-
-	/* Report event size by abs distance of x-axis */
-	//input_set_abs_params(input, ABS_TOOL_WIDTH, 0, AUO_TS_X_MAX, 0, 0);
-	input_set_abs_params(input, ABS_PRESSURE, 0, 255, 0, 0); 
-	input_set_abs_params(input, ABS_TOOL_WIDTH, 0, 1, 0, 0);
-
+	input_set_abs_params(input, ABS_MT_TOUCH_MAJOR, 0, 1, 0, 0);
+	input_set_abs_params(input, ABS_MT_WIDTH_MAJOR, 0, AUO_TS_X_MAX, 0, 0);
 	input_set_abs_params(input, ABS_MT_POSITION_X, AUO_TS_X_MIN, AUO_TS_X_MAX, 0, 0);
-	input_set_abs_params(input, ABS_MT_POSITION_X, AUO_TS_Y_MIN, AUO_TS_Y_MAX, 0, 0);
-	input_set_abs_params(input, ABS_MT_TOUCH_MAJOR, 0, 255, 0, 0);
-	input_set_abs_params(input, ABS_MT_WIDTH_MAJOR, 0, 1, 0, 0);
-	//Android's stupid?
-	input->absbit[0]=0xffffff;
-	input->absbit[1]=0xffffff;
-
+	input_set_abs_params(input, ABS_MT_POSITION_Y, AUO_TS_Y_MIN, AUO_TS_Y_MAX, 0, 0);
 	return input_register_device(input);
 }
 
