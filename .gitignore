@@ -67,3 +67,4 @@ ncscope.*
 *~
 \#*#
 .DS_Store
+exportvar.sh
