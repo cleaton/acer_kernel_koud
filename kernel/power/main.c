@@ -57,7 +57,7 @@ int unregister_pm_notifier(struct notifier_block *nb)
 EXPORT_SYMBOL_GPL(unregister_pm_notifier);
 
 #ifdef CONFIG_IP_FILTER
-static int ip_filter_enabled = 0;
+static int ip_filter_enabled = 1;
 #endif
 
 #ifdef CONFIG_FAST_DORMANCY
