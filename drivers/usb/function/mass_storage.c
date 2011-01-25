@@ -11,7 +11,7 @@
  *
  * Copyright (C) 2003-2007 Alan Stern
  * All rights reserved.
- * 
+ *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
  * are met:
@@ -1795,10 +1795,10 @@ static int check_command(struct fsg_dev *fsg, int cmnd_size,
 	/* Verify the length of the command itself */
 	if (cmnd_size != fsg->cmnd_size) {
 
-		/* Special case workaround: MS-Windows issues REQUEST SENSE/
-		 * INQUIRY with cbw->Length == 12 (it should be 6). */
-		if ((fsg->cmnd[0] == SC_REQUEST_SENSE && fsg->cmnd_size == 12)
-		 || (fsg->cmnd[0] == SC_INQUIRY && fsg->cmnd_size == 12))
+		/* According to USB Mass Storage specification for bootability,
+		 * the device should accept a cbw->Length of 12 bytes for all
+		 * commands. The remaining bytes are padded with 0 by the host. */
+		if (fsg->cmnd_size == 12)
 			cmnd_size = fsg->cmnd_size;
 		else {
 			fsg->phase_error = 1;
@@ -2246,7 +2246,7 @@ static void adjust_wake_lock(struct fsg_dev *fsg)
 	int ums_active = 0;
 	int i;
 	unsigned long		flags;
-	
+
 	spin_lock_irqsave(&fsg->lock, flags);
 
 	if (fsg->config) {
