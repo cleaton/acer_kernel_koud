@@ -61,7 +61,7 @@ static int ip_filter_enabled = 0;
 #endif
 
 #ifdef CONFIG_FAST_DORMANCY
-static int fast_dormancy_enabled = 0;
+static int fast_dormancy_enabled = 1;
 #endif
 
 int pm_notifier_call_chain(unsigned long val)
