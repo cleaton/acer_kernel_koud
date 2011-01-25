@@ -1,4 +1,6 @@
 /*
+ * Command structure for dhd command line utility, copied from wl utility
+ *
  * Copyright (C) 1999-2010, Broadcom Corporation
  * 
  *      Unless you and Broadcom execute a separate written software license
@@ -19,30 +21,30 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: epivers.h.in,v 13.25 2005/10/28 18:35:33 Exp $
- *
-*/
+ * $Id: dhdu_cmd.h,v 1.3.102.2 2008/05/07 00:19:34 Exp $
+ */
 
+#ifndef _dhdu_cmd_h_
+#define _dhdu_cmd_h_
 
-#ifndef _epivers_h_
-#define _epivers_h_
+typedef struct cmd cmd_t;
+typedef int (cmd_func_t)(void *dhd, cmd_t *cmd, char **argv);
 
-#define	EPI_MAJOR_VERSION	4
+/* generic command line argument handler */
+struct cmd {
+	char *name;
+	cmd_func_t *func;
+	int get;
+	int set;
+	char *help;
+};
 
-#define	EPI_MINOR_VERSION	218
+/* list of command line arguments */
+extern cmd_t dhd_cmds[];
+extern cmd_t dhd_varcmd;
 
-#define	EPI_RC_NUMBER		204
+/* per-port ioctl handlers */
+extern int dhd_get(void *dhd, int cmd, void *buf, int len);
+extern int dhd_set(void *dhd, int cmd, void *buf, int len);
 
-#define	EPI_INCREMENTAL_NUMBER	3
-
-#define	EPI_BUILD_NUMBER	0
-
-#define	EPI_VERSION		4, 218, 204, 3
-
-#define	EPI_VERSION_NUM		0x04dacc03
-
-
-#define	EPI_VERSION_STR		"4.218.204.3"
-#define	EPI_ROUTER_VERSION_STR	"4.219.204.3"
-
-#endif 
+#endif /* _dhdu_cmd_h_ */

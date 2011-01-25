@@ -90,7 +90,6 @@ const bcm_iovar_t dhd_iovars[] = {
 	{NULL, 0, 0, 0, 0 }
 };
 
-
 void
 dhd_common_init(void)
 {
@@ -100,7 +99,17 @@ dhd_common_init(void)
 	 * behaviour since the value of the globals may be different on the
 	 * first time that the driver is initialized vs subsequent initializations.
 	 */
-	dhd_msg_level = 0;
+	dhd_msg_level = DHD_ERROR_VAL;
+#ifdef CONFIG_BCM4329_FW_PATH
+	strncpy(fw_path, CONFIG_BCM4329_FW_PATH, MOD_PARAM_PATHLEN-1);
+#else
+	fw_path[0] = '\0';
+#endif
+#ifdef CONFIG_BCM4329_NVRAM_PATH
+	strncpy(nv_path, CONFIG_BCM4329_NVRAM_PATH, MOD_PARAM_PATHLEN-1);
+#else
+	nv_path[0] = '\0';
+#endif
 }
 
 static int

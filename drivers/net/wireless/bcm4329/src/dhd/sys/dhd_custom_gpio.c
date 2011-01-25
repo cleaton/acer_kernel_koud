@@ -45,8 +45,8 @@ extern  void bcm_wlan_power_on(int);
 
 #ifdef CUSTOMER_HW2
 int wifi_set_carddetect(int on);
-extern int wifi_set_power(int on, unsigned long msec);
-extern int wifi_get_irq_number(unsigned long *irq_flags_ptr);
+int wifi_set_power(int on, unsigned long msec);
+int wifi_get_irq_number(unsigned long *irq_flags_ptr);
 #endif
 
 #if defined(OOB_INTR_ONLY)
@@ -64,7 +64,7 @@ MODULE_PARM_DESC(dhd_oob_gpio_num, "DHD oob gpio number");
 int dhd_customer_oob_irq_map(unsigned long *irq_flags_ptr)
 {
 	int  host_oob_irq;
-#if defined(CUSTOMER_HW2) && defined(CONFIG_WIFI_CONTROL_FUNC)
+#ifdef CUSTOMER_HW2
 	host_oob_irq = wifi_get_irq_number(irq_flags_ptr);
 #else
 #if defined(CUSTOM_OOB_GPIO_NUM)
@@ -99,8 +99,7 @@ dhd_customer_gpio_wlan_ctrl(int onoff)
 #ifdef CUSTOMER_HW
 			bcm_wlan_power_off(2);
 #endif /* CUSTOMER_HW */
-#if defined(CUSTOMER_HW2) && defined(CONFIG_WIFI_CONTROL_FUNC)
-
+#ifdef CUSTOMER_HW2
 			wifi_set_power(0, 0);
 #endif
 			WL_ERROR(("=========== WLAN placed in RESET ========\n"));
@@ -112,7 +111,7 @@ dhd_customer_gpio_wlan_ctrl(int onoff)
 #ifdef CUSTOMER_HW
 			bcm_wlan_power_on(2);
 #endif /* CUSTOMER_HW */
-#if defined(CUSTOMER_HW2) && defined(CONFIG_WIFI_CONTROL_FUNC)
+#ifdef CUSTOMER_HW2
 			wifi_set_power(1, 0);
 #endif
 			WL_ERROR(("=========== WLAN going back to live  ========\n"));
@@ -121,7 +120,7 @@ dhd_customer_gpio_wlan_ctrl(int onoff)
 		case WLAN_POWER_OFF:
 			WL_TRACE(("%s: call customer specific GPIO to turn off WL_REG_ON\n",
 				__FUNCTION__));
-#if (defined(CUSTOMER_HW2) && defined(CONFIG_WIFI_CONTROL_FUNC)) || defined(CUSTOMER_HW)
+#ifdef CUSTOMER_HW
 			bcm_wlan_power_off(1);
 #endif /* CUSTOMER_HW */
 		break;
@@ -129,7 +128,7 @@ dhd_customer_gpio_wlan_ctrl(int onoff)
 		case WLAN_POWER_ON:
 			WL_TRACE(("%s: call customer specific GPIO to turn on WL_REG_ON\n",
 				__FUNCTION__));
-#if (defined(CUSTOMER_HW2) && defined(CONFIG_WIFI_CONTROL_FUNC)) || defined(CUSTOMER_HW)
+#ifdef CUSTOMER_HW
 			bcm_wlan_power_on(1);
 #endif /* CUSTOMER_HW */
 			/* Lets customer power to get stable */

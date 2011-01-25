@@ -21,7 +21,7 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: wl_iw.h,v 1.5.34.1.6.13 2010/03/10 03:55:02 Exp $
+ * $Id: wl_iw.h,v 1.5.34.1.6.16 2010/04/19 21:32:10 Exp $
  */
 
 
@@ -89,15 +89,7 @@ typedef struct wl_iw {
 	dhd_pub_t * pub;
 } wl_iw_t;
 
-struct wl_ctrl {
-	struct timer_list *timer;
-	struct net_device *dev;
-	long sysioc_pid;
-	struct semaphore timer_sem;
-	struct completion sysioc_exited;
-};
-
-#define WLC_IW_SS_CACHE_MAXLEN			512
+#define WLC_IW_SS_CACHE_MAXLEN				512
 #define WLC_IW_SS_CACHE_CTRL_FIELD_MAXLEN	32
 #define WLC_IW_BSS_INFO_MAXLEN 				\
 	(WLC_IW_SS_CACHE_MAXLEN - WLC_IW_SS_CACHE_CTRL_FIELD_MAXLEN)

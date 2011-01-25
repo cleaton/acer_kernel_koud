@@ -22,7 +22,7 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: dhd_linux.c,v 1.65.4.9.2.12.2.60.4.4 2010/03/25 05:07:49 Exp $
+ * $Id: dhd_linux.c,v 1.65.4.9.2.12.2.66 2010/04/01 17:01:25 Exp $
  */
 
 #ifdef CONFIG_WIFI_CONTROL_FUNC
@@ -63,7 +63,7 @@
 #endif
 #include <linux/freezer.h>
 #if defined(CUSTOMER_HW2) && defined(CONFIG_WIFI_CONTROL_FUNC)
-#include <linux/wifi_tiwlan.h>
+#include <linux/wlan_plat.h>
 
 struct semaphore wifi_control_sem;
 
@@ -203,9 +203,9 @@ print_tainted()
 #endif	/* LINUX_VERSION_CODE == KERNEL_VERSION(2, 6, 15) */
 
 /* Linux wireless extension support */
-#ifdef CONFIG_WIRELESS_EXT
+#if defined(CONFIG_WIRELESS_EXT)
 #include <wl_iw.h>
-#endif /* CONFIG_WIRELESS_EXT */
+#endif
 
 #if defined(CONFIG_HAS_EARLYSUSPEND)
 #include <linux/earlysuspend.h>
@@ -228,9 +228,9 @@ typedef struct dhd_if {
 
 /* Local private structure (extension of pub) */
 typedef struct dhd_info {
-#ifdef CONFIG_WIRELESS_EXT
+#if defined(CONFIG_WIRELESS_EXT)
 	wl_iw_t		iw;		/* wireless extensions state (must be first) */
-#endif /* CONFIG_WIRELESS_EXT */
+#endif
 
 	dhd_pub_t pub;
 
@@ -284,7 +284,7 @@ typedef struct dhd_info {
 char firmware_path[MOD_PARAM_PATHLEN];
 char nvram_path[MOD_PARAM_PATHLEN];
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 27)) && 1
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 27))
 struct semaphore dhd_registration_sem;
 #endif 
 /* load firmware and/or nvram values from the filesystem */
@@ -388,12 +388,16 @@ module_param(dhd_pktgen_len, uint, 0);
 #define DHD_COMPILED
 #endif
 
-static char dhd_version[] = "Dongle Host Driver, version " EPI_VERSION_STR;
+static char dhd_version[] = "Dongle Host Driver, version " EPI_VERSION_STR
+#ifdef DHD_DEBUG
+"\nCompiled in " SRCBASE " on " __DATE__ " at " __TIME__
+#endif
+;
 
 
-#ifdef CONFIG_WIRELESS_EXT
+#if defined(CONFIG_WIRELESS_EXT)
 struct iw_statistics *dhd_get_wireless_stats(struct net_device *dev);
-#endif /* CONFIG_WIRELESS_EXT */
+#endif
 
 static void dhd_dpc(ulong data);
 /* forward decl */
@@ -692,6 +696,7 @@ _dhd_set_mac_address(dhd_info_t *dhd, int ifidx, struct ether_addr *addr)
 	wl_ioctl_t ioc;
 	int ret;
 
+	DHD_TRACE(("%s enter\n", __FUNCTION__));
 	if (!bcm_mkiovar("cur_etheraddr", (char*)addr, ETHER_ADDR_LEN, buf, 32)) {
 		DHD_ERROR(("%s: mkiovar failed for cur_etheraddr\n", dhd_ifname(&dhd->pub, ifidx)));
 		return -1;
@@ -735,6 +740,8 @@ dhd_op_if(dhd_if_t *ifp)
 		 * in case we missed the WLC_E_IF_DEL event.
 		 */
 		if (ifp->net != NULL) {
+			DHD_ERROR(("%s: ERROR: netdev:%s already exists, try free & unregister \n",
+			 __FUNCTION__, ifp->net->name));
 			netif_stop_queue(ifp->net);
 			unregister_netdev(ifp->net);
 			free_netdev(ifp->net);
@@ -799,6 +806,9 @@ _dhd_sysioc_thread(void *data)
 {
 	dhd_info_t *dhd = (dhd_info_t *)data;
 	int i;
+#ifdef SOFTAP
+	bool in_ap = FALSE;
+#endif
 
 	set_freezable();
 
@@ -809,12 +819,10 @@ _dhd_sysioc_thread(void *data)
 		for (i = 0; i < DHD_MAX_IFS; i++) {
 			if (dhd->iflist[i]) {
 #ifdef SOFTAP
-				bool in_ap = (ap_net_dev != NULL);
+				in_ap = (ap_net_dev != NULL);
 #endif /* SOFTAP */
-
 				if (dhd->iflist[i]->state)
 					dhd_op_if(dhd->iflist[i]);
-
 #ifdef SOFTAP
 				if (dhd->iflist[i] == NULL) {
 					DHD_TRACE(("%s: interface %d just been removed!\n\n", __FUNCTION__, i));
@@ -823,15 +831,16 @@ _dhd_sysioc_thread(void *data)
 
 				if (in_ap && dhd->set_macaddress) {
 					DHD_TRACE(("attempt to set MAC for %s in AP Mode blocked.\n", dhd->iflist[i]->net->name));
-					dhd->set_multicast = FALSE;
-					continue;
-				} else if (in_ap && dhd->set_multicast) {
-					DHD_TRACE(("attempt to set MULTICAST list for %s in AP Mode blocked.\n", dhd->iflist[i]->net->name));
 					dhd->set_macaddress = FALSE;
 					continue;
 				}
-#endif /* SOFTAP */
 
+				if (in_ap && dhd->set_multicast)  {
+					DHD_TRACE(("attempt to set MULTICAST list for %s in AP Mode blocked.\n", dhd->iflist[i]->net->name));
+					dhd->set_multicast = FALSE;
+					continue;
+				}
+#endif /* SOFTAP */
 				if (dhd->set_multicast) {
 					dhd->set_multicast = FALSE;
 					_dhd_set_multicast_list(dhd, i);
@@ -943,6 +952,7 @@ dhd_start_xmit(struct sk_buff *skb, struct net_device *net)
 	ifidx = dhd_net2idx(dhd, net);
 	if (ifidx == DHD_BAD_IF) {
 		DHD_ERROR(("%s: bad ifidx %d\n", __FUNCTION__, ifidx));
+		netif_stop_queue(net);
 		return -ENODEV;
 	}
 
@@ -1523,13 +1533,13 @@ dhd_ioctl_entry(struct net_device *net, struct ifreq *ifr, int cmd)
 	if (ifidx == DHD_BAD_IF)
 		return -1;
 
-#ifdef CONFIG_WIRELESS_EXT
+#if defined(CONFIG_WIRELESS_EXT)
 	/* linux wireless extensions */
 	if ((cmd >= SIOCIWFIRST) && (cmd <= SIOCIWLAST)) {
 		/* may recurse, do NOT lock */
 		return wl_iw_ioctl(net, ifr, cmd);
 	}
-#endif /* CONFIG_WIRELESS_EXT */
+#endif
 
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2, 4, 2)
 	if (cmd == SIOCETHTOOL)
@@ -1589,8 +1599,8 @@ dhd_ioctl_entry(struct net_device *net, struct ifreq *ifr, int cmd)
 	}
 
 	/* send to dongle (must be up, and wl) */
-	if (!dhd->pub.up || (dhd->pub.busstate != DHD_BUS_DATA)) {
-		DHD_TRACE(("DONGLE_DOWN\n"));
+	if (dhd->pub.busstate != DHD_BUS_DATA) {
+		DHD_ERROR(("%s DONGLE_DOWN,__FUNCTION__\n", __FUNCTION__));
 		bcmerror = BCME_DONGLE_DOWN;
 		goto done;
 	}
@@ -1663,9 +1673,11 @@ dhd_open(struct net_device *net)
 	ifidx = dhd_net2idx(dhd, net);
 	DHD_TRACE(("%s: ifidx %d\n", __FUNCTION__, ifidx));
 
-	ASSERT(ifidx == 0);
+	/* ASSERT(ifidx == 0); */
 
-	atomic_set(&dhd->pend_8021x_cnt, 0);
+	if (ifidx == 0) { /* do it only for primary eth0 */
+
+		atomic_set(&dhd->pend_8021x_cnt, 0);
 
 	memcpy(net->dev_addr, dhd->pub.mac.octet, ETHER_ADDR_LEN);
 
@@ -1676,7 +1688,7 @@ dhd_open(struct net_device *net)
 	else
 		dhd->iflist[ifidx]->net->features &= ~NETIF_F_IP_CSUM;
 #endif
-
+	}
 	/* Allow transmit calls */
 	netif_start_queue(net);
 	dhd->pub.up = 1;
@@ -1766,14 +1778,10 @@ dhd_attach(osl_t *osh, struct dhd_bus *bus, uint bus_hdrlen)
 
 	DHD_TRACE(("%s: Enter\n", __FUNCTION__));
 	/* updates firmware nvram path if it was provided as module paramters */
-#if 0
 	if ((firmware_path != NULL) && (firmware_path[0] != '\0'))
 		strcpy(fw_path, firmware_path);
 	if ((nvram_path != NULL) && (nvram_path[0] != '\0'))
 		strcpy(nv_path, nvram_path);
-#endif
-	strcpy(fw_path, "/etc/wifi/BCM4325.bin");
-	strcpy(nv_path, "/etc/wifi/nvram.txt");
 
 	/* Allocate etherdev, including space for private structure */
 	if (!(net = alloc_etherdev(sizeof(dhd)))) {
@@ -1810,7 +1818,11 @@ dhd_attach(osl_t *osh, struct dhd_bus *bus, uint bus_hdrlen)
 	if (dhd_add_if(dhd, 0, (void *)net, net->name, NULL, 0, 0) == DHD_BAD_IF)
 		goto fail;
 
+#if (LINUX_VERSION_CODE <= KERNEL_VERSION(2, 6, 31))
 	net->open = NULL;
+#else
+	net->netdev_ops = NULL;
+#endif
 
 	init_MUTEX(&dhd->proto_sem);
 	/* Initialize other structure content */
@@ -1842,7 +1854,7 @@ dhd_attach(osl_t *osh, struct dhd_bus *bus, uint bus_hdrlen)
 		DHD_ERROR(("dhd_prot_attach failed\n"));
 		goto fail;
 	}
-#ifdef CONFIG_WIRELESS_EXT
+#if defined(CONFIG_WIRELESS_EXT)
 	/* Attach and link in the iw */
 	if (wl_iw_attach(net, (void *)&dhd->pub) != 0) {
 		DHD_ERROR(("wl_iw_attach failed\n"));
@@ -2004,6 +2016,26 @@ dhd_iovar(dhd_pub_t *pub, int ifidx, char *name, char *cmd_buf, uint cmd_len, in
 	return ret;
 }
 
+#if (LINUX_VERSION_CODE > KERNEL_VERSION(2, 6, 31))
+static struct net_device_ops dhd_ops_pri = {
+	.ndo_open = dhd_open,
+	.ndo_stop = dhd_stop,
+	.ndo_get_stats = dhd_get_stats,
+	.ndo_do_ioctl = dhd_ioctl_entry,
+	.ndo_start_xmit = dhd_start_xmit,
+	.ndo_set_mac_address = dhd_set_mac_address,
+	.ndo_set_multicast_list = dhd_set_multicast_list,
+};
+
+static struct net_device_ops dhd_ops_virt = {
+	.ndo_get_stats = dhd_get_stats,
+	.ndo_do_ioctl = dhd_ioctl_entry,
+	.ndo_start_xmit = dhd_start_xmit,
+	.ndo_set_mac_address = dhd_set_mac_address,
+	.ndo_set_multicast_list = dhd_set_multicast_list,
+};
+#endif
+
 int
 dhd_net_attach(dhd_pub_t *dhdp, int ifidx)
 {
@@ -2014,30 +2046,43 @@ dhd_net_attach(dhd_pub_t *dhdp, int ifidx)
 	DHD_TRACE(("%s: ifidx %d\n", __FUNCTION__, ifidx));
 
 	ASSERT(dhd && dhd->iflist[ifidx]);
-	ASSERT(dhd->iflist[ifidx]->net);
-	ASSERT(!dhd->iflist[ifidx]->net->open);
-
-	/* Ok, link into the network layer... */
 	net = dhd->iflist[ifidx]->net;
-	if (ifidx == 0) {
-		/*
-		 * device functions for the primary interface only
-		 */
-		net->open = dhd_open;
-		net->stop = dhd_stop;
-	} else {
-		net->open = net->stop = NULL;
-		/*
-		 * We have to use the primary MAC for virtual interfaces
-		 */
-		memcpy(temp_addr, dhd->iflist[ifidx]->mac_addr, ETHER_ADDR_LEN);
-	}
+
+	ASSERT(net);
+#if (LINUX_VERSION_CODE <= KERNEL_VERSION(2, 6, 31))
+	ASSERT(!net->open);
 	net->get_stats = dhd_get_stats;
 	net->do_ioctl = dhd_ioctl_entry;
 	net->hard_start_xmit = dhd_start_xmit;
-	net->hard_header_len = ETH_HLEN + dhd->pub.hdrlen;
 	net->set_mac_address = dhd_set_mac_address;
 	net->set_multicast_list = dhd_set_multicast_list;
+	net->open = net->stop = NULL;
+#else
+	ASSERT(!net->netdev_ops);
+	net->netdev_ops = &dhd_ops_virt;
+#endif
+
+#if (LINUX_VERSION_CODE <= KERNEL_VERSION(2, 6, 31))
+		net->open = dhd_open;
+		net->stop = dhd_stop;
+#else
+		net->netdev_ops = &dhd_ops_pri;
+#endif
+
+	/*
+	 * We have to use the primary MAC for virtual interfaces
+	 */
+	if (ifidx != 0) {
+		/* for virtual interfaces use the primary MAC  */
+		memcpy(temp_addr, dhd->pub.mac.octet, ETHER_ADDR_LEN);
+	}
+
+	if (ifidx == 1) {
+		DHD_TRACE(("%s ACCESS POINT MAC: \n", __FUNCTION__));
+		/*  ACCESSPOINT INTERFACE CASE */
+		temp_addr[0] |= 0X02;  /* set bit 2 , - Locally Administered address  */
+	}
+	net->hard_header_len = ETH_HLEN + dhd->pub.hdrlen;
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 24)
 	net->ethtool_ops = &dhd_ethtool_ops;
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 24) */
@@ -2056,14 +2101,20 @@ dhd_net_attach(dhd_pub_t *dhdp, int ifidx)
 	memcpy(net->dev_addr, temp_addr, ETHER_ADDR_LEN);
 
 	if (register_netdev(net) != 0) {
-		DHD_ERROR(("couldn't register the net device\n"));
+		DHD_ERROR(("%s: couldn't register the net device\n", __FUNCTION__));
 		goto fail;
 	}
 
 	printf("%s: Broadcom Dongle Host Driver mac=%.2x:%.2x:%.2x:%.2x:%.2x:%.2x\n", net->name,
 	       dhd->pub.mac.octet[0], dhd->pub.mac.octet[1], dhd->pub.mac.octet[2],
 	       dhd->pub.mac.octet[3], dhd->pub.mac.octet[4], dhd->pub.mac.octet[5]);
-	wl_iw_iscan_set_scan_broadcast_prep(net, 1);
+#ifdef SOFTAP
+	if (ifidx == 0)
+		/* Don't call for SOFTAP Interface in SOFTAP MODE */
+		wl_iw_iscan_set_scan_broadcast_prep(net, 1);
+#else
+		wl_iw_iscan_set_scan_broadcast_prep(net, 1);
+#endif /* SOFTAP */
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 27))
 	up(&dhd_registration_sem);
@@ -2071,7 +2122,11 @@ dhd_net_attach(dhd_pub_t *dhdp, int ifidx)
 	return 0;
 
 fail:
+#if (LINUX_VERSION_CODE <= KERNEL_VERSION(2, 6, 31))
 	net->open = NULL;
+#else
+	net->netdev_ops = NULL;
+#endif
 	return BCME_ERROR;
 }
 
@@ -2117,22 +2172,27 @@ dhd_detach(dhd_pub_t *dhdp)
 #if defined(CONFIG_HAS_EARLYSUSPEND)
 			unregister_early_suspend(&dhd->early_suspend);
 #endif	/* defined(CONFIG_HAS_EARLYSUSPEND) */
-#ifdef CONFIG_WIRELESS_EXT
+#if defined(CONFIG_WIRELESS_EXT)
 			/* Attach and link in the iw */
 			wl_iw_detach();
 #endif
-			if (dhd->sysioc_pid >= 0) {
-				KILL_PROC(dhd->sysioc_pid, SIGTERM);
-				wait_for_completion(&dhd->sysioc_exited);
-			}
 
 			for (i = 1; i < DHD_MAX_IFS; i++)
 				if (dhd->iflist[i])
 					dhd_del_if(dhd, i);
 
+			if (dhd->sysioc_pid >= 0) {
+				KILL_PROC(dhd->sysioc_pid, SIGTERM);
+				wait_for_completion(&dhd->sysioc_exited);
+			}
+
 			ifp = dhd->iflist[0];
 			ASSERT(ifp);
+#if (LINUX_VERSION_CODE <= KERNEL_VERSION(2, 6, 31))
 			if (ifp->net->open) {
+#else
+			if (ifp->net->netdev_ops == &dhd_ops_pri) {
+#endif
 				dhd_stop(ifp->net);
 				unregister_netdev(ifp->net);
 			}
@@ -2229,7 +2289,7 @@ dhd_module_init(void)
 	 * It's needed to make sync up exit from dhd insmod  and
 	 * Kernel MMC sdio device callback registration
 	 */
-	if (down_timeout(&dhd_registration_sem,  msecs_to_jiffies(20000)) != 0) {
+	if (down_timeout(&dhd_registration_sem,  msecs_to_jiffies(10000)) != 0) {
 		error = -EINVAL;
 		DHD_ERROR(("%s: sdio_register_driver timeout\n", __FUNCTION__));
 		goto fail_2;
@@ -2503,7 +2563,7 @@ return MALLOC(0, size);
 #endif /* #if defined(CUSTOMER_HW2) && defined(CONFIG_WIFI_CONTROL_FUNC) */
 }
 #endif /* DHD_USE_STATIC_BUF */
-#ifdef CONFIG_WIRELESS_EXT
+#if defined(CONFIG_WIRELESS_EXT)
 struct iw_statistics *
 dhd_get_wireless_stats(struct net_device *dev)
 {
@@ -2517,7 +2577,7 @@ dhd_get_wireless_stats(struct net_device *dev)
 	else
 		return NULL;
 }
-#endif /* CONFIG_WIRELESS_EXT */
+#endif
 
 static int
 dhd_wl_host_event(dhd_info_t *dhd, int *ifidx, void *pktdata,
@@ -2531,11 +2591,11 @@ dhd_wl_host_event(dhd_info_t *dhd, int *ifidx, void *pktdata,
 	if (bcmerror != BCME_OK)
 		return (bcmerror);
 
-#ifdef CONFIG_WIRELESS_EXT
+#if defined(CONFIG_WIRELESS_EXT)
 	ASSERT(dhd->iflist[*ifidx] != NULL);
 
 	wl_iw_event(dhd->iflist[*ifidx]->net, event, *data);
-#endif /* CONFIG_WIRELESS_EXT */
+#endif
 
 	return (bcmerror);
 }
