@@ -1777,12 +1777,14 @@ dhd_attach(osl_t *osh, struct dhd_bus *bus, uint bus_hdrlen)
 	struct net_device *net;
 
 	DHD_TRACE(("%s: Enter\n", __FUNCTION__));
+
 	/* updates firmware nvram path if it was provided as module paramters */
+#if 0
 	if ((firmware_path != NULL) && (firmware_path[0] != '\0'))
 		strcpy(fw_path, firmware_path);
 	if ((nvram_path != NULL) && (nvram_path[0] != '\0'))
 		strcpy(nv_path, nvram_path);
-		
+#endif
 	strcpy(fw_path, "/etc/wifi/BCM4325.bin");
 	strcpy(nv_path, "/etc/wifi/nvram.txt");
 
