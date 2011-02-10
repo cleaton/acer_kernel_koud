@@ -28,10 +28,10 @@
 #define COORDINATE_COMPARE_MODE  0x0d
 
 #define SENSITIVITY_REG          0x67
-#define SENSITIVITY              75
+#define SENSITIVITY              30
 
 #define NOISE_REG                0x37
-#define NOISE                    75
+#define NOISE                    30
 
 #define VERSION_REG              0x7c
 #define SUB_VERSION_REG          0x78
@@ -288,7 +288,8 @@ static void h353vl01_work_func(struct work_struct *work)
 			coord[1][0]=rawcoord[1][0];
 			coord[1][1]=rawcoord[1][1];
 		} else {
-#define dst(x1,y1,x2,y2) (abs(rawcoord[x1][0]-oldcoord[x2][0])+abs(rawcoord[y1][1]-oldcoord[y2][1]))
+#define sq(z) (z)*(z)
+#define dst(x1,y1,x2,y2) (sq(rawcoord[x1][0]-oldcoord[x2][0])+sq(rawcoord[y1][1]-oldcoord[y2][1]))
 #define calibrey 250
 #define calibrex 200
 #define massize 5
@@ -390,13 +391,13 @@ static void h353vl01_work_func(struct work_struct *work)
 
 	input_report_abs(h353_data->input, ABS_MT_TOUCH_MAJOR, pressed ? 128 : 0);
 	input_report_abs(h353_data->input, ABS_MT_WIDTH_MAJOR, 0);
-	input_report_abs(h353_data->input, ABS_MT_POSITION_X, coord[0][0]);
+	input_report_abs(h353_data->input, ABS_MT_POSITION_X, (coord[0][0]*5)/3);
 	input_report_abs(h353_data->input, ABS_MT_POSITION_Y, coord[0][1]);
 	input_mt_sync(h353_data->input);
 	if (finger2_pressed) {
 		input_report_abs(h353_data->input, ABS_MT_TOUCH_MAJOR, 128);
 		input_report_abs(h353_data->input, ABS_MT_WIDTH_MAJOR, 0);
-		input_report_abs(h353_data->input, ABS_MT_POSITION_X, coord[1][0]);
+		input_report_abs(h353_data->input, ABS_MT_POSITION_X, (coord[1][0]*5)/3);
 		input_report_abs(h353_data->input, ABS_MT_POSITION_Y, coord[1][1]);
 		input_mt_sync(h353_data->input);
 	} else if (finger2_was_pressed) {
